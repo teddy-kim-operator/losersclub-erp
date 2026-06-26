@@ -11,6 +11,25 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="루저스클럽 ERP", page_icon="🏷️", layout="wide", initial_sidebar_state="expanded")
 
+# 비밀번호 인증
+def check_password():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    if st.session_state.authenticated:
+        return True
+    st.title("🔐 루저스클럽 ERP")
+    pw = st.text_input("비밀번호를 입력하세요", type="password")
+    if st.button("로그인"):
+        if pw == st.secrets.get("password", ""):
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("비밀번호가 틀렸습니다.")
+    return False
+
+if not check_password():
+    st.stop()
+
 BASE_DIR = Path(__file__).parent
 # 로컬: ERP 폴더 기준 / 클라우드: app.py 옆 data 폴더
 DATA_DIR = BASE_DIR / "data" if (BASE_DIR / "data").exists() else BASE_DIR.parent / "매출자료"
