@@ -192,6 +192,26 @@ st.sidebar.markdown("---")
 st.sidebar.caption(f"📅 {df_all['날짜'].min().strftime('%Y.%m.%d')} ~ {df_all['날짜'].max().strftime('%Y.%m.%d')}")
 st.sidebar.caption(f"총 {len(df_all):,}건 | 필터 {len(df):,}건")
 
+st.sidebar.markdown("---")
+if st.sidebar.button("📥 매출 업데이트", use_container_width=True, type="primary"):
+    import subprocess, sys
+    merge_script = Path(__file__).parent / "merge_raw.py"
+    if not merge_script.exists():
+        st.sidebar.error("merge_raw.py 없음")
+    else:
+        with st.spinner("업데이트 중..."):
+            result = subprocess.run(
+                [sys.executable, str(merge_script)],
+                capture_output=True, text=True, encoding='utf-8', errors='replace'
+            )
+        if result.returncode == 0:
+            st.sidebar.success("✅ 완료!")
+            st.cache_data.clear()
+            st.rerun()
+        else:
+            st.sidebar.error("❌ 오류")
+            st.sidebar.code(result.stderr or result.stdout)
+
 # ── 마케팅 데이터 로더 ───────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def load_marketing(filepath: str):
