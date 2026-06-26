@@ -1404,12 +1404,13 @@ with tab9:
                      delta=achievement-100, color="#2E7D32" if achievement>=100 else "#C62828")
 
             st.markdown("---")
-            new_goal = st.number_input("목표 금액 (원)", value=int(cur_goal), step=1000000,
-                                       format="%d", key="new_goal_input")
+            new_goal_man = st.number_input("목표 금액 (만원)", value=int(cur_goal/10000), step=100,
+                                           format="%d", key="new_goal_input")
             if st.button("💾 저장", key="save_goal"):
+                new_goal = new_goal_man * 10000
                 goal_data[sel_month] = new_goal
                 save_goals(goal_data)
-                st.success(f"{sel_month} 목표 ₩{new_goal/10000:,.0f}만 저장 완료!")
+                st.success(f"{sel_month} 목표 ₩{new_goal_man:,}만 저장 완료!")
                 st.rerun()
 
             # 전체 월 목표 현황표
