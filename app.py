@@ -20,7 +20,7 @@ def check_password():
     st.title("🔐 루저스클럽 ERP")
     pw = st.text_input("비밀번호를 입력하세요", type="password")
     if st.button("로그인"):
-        if pw == st.secrets.get("password", ""):
+        if pw == st.secrets.get("password", "teddy"):
             st.session_state.authenticated = True
             st.rerun()
         else:
