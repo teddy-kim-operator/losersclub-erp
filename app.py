@@ -7,7 +7,7 @@ from scipy import stats
 import json
 import os
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 st.set_page_config(page_title="루저스클럽 ERP", page_icon="🏷️", layout="wide", initial_sidebar_state="expanded")
 
@@ -31,7 +31,6 @@ if not check_password():
     st.stop()
 
 BASE_DIR = Path(__file__).parent
-# 로컬: ERP 폴더 기준 / 클라우드: app.py 옆 data 폴더
 DATA_DIR = BASE_DIR / "data" if (BASE_DIR / "data").exists() else BASE_DIR.parent / "매출자료"
 MGMT_FILE = BASE_DIR / "management.json"
 MKTG_FILE = BASE_DIR / "루저스클럽 마케팅 효율.xlsx"
@@ -51,6 +50,8 @@ st.markdown("""
 .warn-card{background:#FFF3E0;border-radius:8px;padding:10px 14px;border-left:4px solid #FB8C00;margin:4px 0;}
 .danger-card{background:#FFEBEE;border-radius:8px;padding:10px 14px;border-left:4px solid #E53935;margin:4px 0;}
 .good-card{background:#E8F5E9;border-radius:8px;padding:10px 14px;border-left:4px solid #43A047;margin:4px 0;}
+.insight-card{background:#E3F2FD;border-radius:8px;padding:12px 16px;border-left:4px solid #1E88E5;margin:6px 0;}
+.rank-row{padding:6px 0;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px;}
 </style>""", unsafe_allow_html=True)
 
 # ── 데이터 로더 ───────────────────────────────────────────────────────────────
@@ -148,13 +149,12 @@ def load_marketing(filepath: str):
         return None
     xf = pd.ExcelFile(filepath)
     result = {}
-
-    # 무신사 메타 광고
     df = pd.read_excel(xf, sheet_name='무신사 메타 광고', header=1)
     df = df.rename(columns={'Unnamed: 0':'_'})
     df['날짜'] = pd.to_datetime(df['날짜'], errors='coerce')
     df = df.dropna(subset=['날짜'])
     df['년월'] = df['날짜'].dt.to_period('M').astype(str)
+    df['주차'] = df['날짜'].dt.to_period('W').astype(str)
     df['ROAS'] = pd.to_numeric(df['catalog_segment_value_omni_purchase_roas:omni_purchase'], errors='coerce')
     df['지출 금액 (KRW)'] = pd.to_numeric(df['지출 금액 (KRW)'], errors='coerce').fillna(0)
     df['링크 클릭'] = pd.to_numeric(df['링크 클릭'], errors='coerce').fillna(0)
@@ -163,47 +163,47 @@ def load_marketing(filepath: str):
     df['공유 항목의 구매 전환값'] = pd.to_numeric(df['공유 항목의 구매 전환값'], errors='coerce').fillna(0)
     result['meta_ms'] = df
 
-    # 자사몰 메타 광고
     df2 = pd.read_excel(xf, sheet_name='자사몰 메타 광고', header=1)
     df2['날짜'] = pd.to_datetime(df2['날짜'], errors='coerce')
     df2 = df2.dropna(subset=['날짜'])
     df2['년월'] = df2['날짜'].dt.to_period('M').astype(str)
+    df2['주차'] = df2['날짜'].dt.to_period('W').astype(str)
     for col in ['지출 금액 (KRW)','링크 클릭','노출','구매','구매 전환값']:
         df2[col] = pd.to_numeric(df2[col], errors='coerce').fillna(0)
     result['meta_js'] = df2
 
-    # 무신사 상품광고
     df3 = pd.read_excel(xf, sheet_name='무신사 상품광고', header=4)
     df3 = df3.dropna(subset=['날짜'])
     df3['날짜'] = pd.to_datetime(df3['날짜'], errors='coerce')
     df3['년월'] = df3['날짜'].dt.to_period('M').astype(str)
+    df3['주차'] = df3['날짜'].dt.to_period('W').astype(str)
     for col in ['집행 광고비','매출','광고 수익률(ROAS)','클릭률','전환율','노출 수','클릭 수']:
         df3[col] = pd.to_numeric(df3[col], errors='coerce').fillna(0)
     result['prod_ms'] = df3
 
-    # 29CM 상품광고
     df4 = pd.read_excel(xf, sheet_name='29CM 상품광고', header=4)
     df4 = df4.dropna(subset=['날짜'])
     df4['날짜'] = pd.to_datetime(df4['날짜'], errors='coerce')
     df4['년월'] = df4['날짜'].dt.to_period('M').astype(str)
+    df4['주차'] = df4['날짜'].dt.to_period('W').astype(str)
     for col in ['집행 광고비','매출','광고 수익률(ROAS)','클릭률','전환율','노출 수','클릭 수']:
         df4[col] = pd.to_numeric(df4[col], errors='coerce').fillna(0)
     result['prod_29'] = df4
-
     return result
 
-# ── 탭 ───────────────────────────────────────────────────────────────────────
-tabs = st.tabs(["📊 KPI", "🏷️ 카테고리", "📺 채널", "🏆 상품랭킹",
-                "🔬 수명주기", "⏱️ 재고소진예측", "🚨 이상치감지",
-                "📈 시즌보정", "🏪 팝업분석", "🔀 카니발리제이션",
-                "📣 마케팅", "⚙️ 관리"])
-tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8,tab9,tab10,tab11,tab12 = tabs
+# ── 탭 (7탭) ──────────────────────────────────────────────────────────────────
+tabs = st.tabs(["📊 홈", "🏷️ 카테고리", "📺 채널", "🏆 상품랭킹",
+                "🔬 상품분석", "🏪 팝업 & 마케팅", "⚙️ 관리"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = tabs
 
 # ════════════════════════════════════════════════════════════════════════════
-# TAB 1 — KPI
+# TAB 1 — 홈
 # ════════════════════════════════════════════════════════════════════════════
 with tab1:
-    st.markdown("### 📊 월별 KPI")
+    mgmt_home = load_mgmt()
+    targets = mgmt_home.get("targets", {})
+
+    # 월별 KPI 계산
     monthly = df.groupby('년월').agg(매출=('판매금액','sum'),수량=('수량','sum'),SKU=('상품명','nunique')).reset_index()
     monthly['ASP'] = monthly['매출'] / monthly['수량']
     monthly['실현율'] = df.groupby('년월')['실현율'].mean().reindex(monthly['년월']).values
@@ -216,23 +216,152 @@ with tab1:
         return (ym_map[ym]-ym_map[prev])/ym_map[prev]*100 if prev in ym_map else None
     monthly['YoY'] = monthly['년월'].apply(get_yoy)
 
-    last = monthly.iloc[-1]; prev = monthly.iloc[-2] if len(monthly)>1 else None
-    c1,c2,c3,c4,c5 = st.columns(5)
-    kpi_card(c1, f"총매출 ({last['년월']})", f"{last['매출_만']:,.0f}만", last['MoM'])
-    kpi_card(c2, "총수량", f"{int(last['수량']):,}개", color="#43A047")
-    kpi_card(c3, "ASP", f"{last['ASP']/1000:.1f}천원", color="#FB8C00")
-    kpi_card(c4, "실현율", f"{last['실현율']:.1f}%", delta=last['실현율']-(prev['실현율'] if prev is not None else last['실현율']), color="#8E24AA")
-    kpi_card(c5, "활성 SKU", f"{int(last['SKU'])}개", color="#E53935")
+    last = monthly.iloc[-1]
+    prev_row = monthly.iloc[-2] if len(monthly) > 1 else None
+    last_ym = last['년월']
+    actual_rev = last['매출']
+    target_val = targets.get(last_ym, 0) * 10000  # 만원 → 원
 
+    # 예상 달성율: 오늘 기준 월 진행률로 추정
+    today = date.today()
+    try:
+        days_in_month = pd.Period(last_ym, 'M').days_in_month
+        days_passed = min(today.day, days_in_month)
+        progress_rate = days_passed / days_in_month
+    except:
+        progress_rate = 1.0
+    expected_rev = actual_rev / progress_rate if progress_rate > 0 else actual_rev
+    ach_rate = actual_rev / target_val * 100 if target_val > 0 else None
+    expected_ach = expected_rev / target_val * 100 if target_val > 0 else None
+    gap_man = (actual_rev - target_val) / 10000 if target_val > 0 else None
+
+    # 전년 동월
+    prev_ym = str(pd.Period(last_ym, 'M') - 12)
+    all_ym_map = dict(zip(df_all.groupby('년월')['판매금액'].sum().index,
+                          df_all.groupby('년월')['판매금액'].sum().values))
+    prev_rev = all_ym_map.get(prev_ym, 0)
+    yoy_val = (actual_rev - prev_rev) / prev_rev * 100 if prev_rev > 0 else None
+
+    # ── 목표 달성 현황 ──────────────────────────────────────────────────────
+    st.markdown(f"### 📊 {last_ym} 목표 달성 현황")
+    c1,c2,c3,c4,c5,c6 = st.columns(6)
+    kpi_card(c1, "이번달 매출", f"{actual_rev/10000:,.0f}만", last['MoM'])
+    if target_val > 0:
+        kpi_card(c2, "목표 매출", f"{target_val/10000:,.0f}만", color="#757575")
+        ach_color = "#43A047" if (ach_rate or 0) >= 100 else ("#FB8C00" if (ach_rate or 0) >= 80 else "#E53935")
+        kpi_card(c3, "달성율", f"{ach_rate:.1f}%" if ach_rate else "-", color=ach_color)
+        gap_color = "#43A047" if (gap_man or 0) >= 0 else "#E53935"
+        kpi_card(c4, "목표 대비 갭", f"{gap_man:+,.0f}만" if gap_man is not None else "-", color=gap_color)
+    else:
+        kpi_card(c2, "목표 미설정", "관리탭에서 입력", color="#757575")
+        kpi_card(c3, "달성율", "-", color="#757575")
+        kpi_card(c4, "갭", "-", color="#757575")
+    kpi_card(c5, f"전년 대비 ({prev_ym})", f"{yoy_val:+.1f}%" if yoy_val is not None else "데이터 없음",
+             color="#1E88E5" if (yoy_val or 0) >= 0 else "#E53935")
+    kpi_card(c6, "예상 달성율", f"{expected_ach:.1f}%" if expected_ach else "-",
+             color="#43A047" if (expected_ach or 0) >= 100 else "#FB8C00")
+
+    st.markdown("---")
+
+    # ── 이번주 베스트 10 & 채널별 전주대비 ─────────────────────────────────
+    last_date = df_all['날짜'].max()
+    week_start = last_date - timedelta(days=6)
+    prev_week_start = week_start - timedelta(days=7)
+
+    this_week_df = df_all[df_all['날짜'] >= week_start]
+    prev_week_df = df_all[(df_all['날짜'] >= prev_week_start) & (df_all['날짜'] < week_start)]
+
+    col_left, col_right = st.columns([3, 2])
+
+    with col_left:
+        st.markdown(f"### 🏆 이번주 베스트 10  <span style='font-size:13px;color:#888'>({week_start.strftime('%m/%d')} ~ {last_date.strftime('%m/%d')})</span>", unsafe_allow_html=True)
+
+        this_week_style = this_week_df.groupby(['스타일코드','대표명']).agg(
+            이번주=('판매금액','sum'), 수량=('수량','sum')).reset_index()
+        prev_week_style = prev_week_df.groupby('스타일코드')['판매금액'].sum().reset_index()
+        prev_week_style.columns = ['스타일코드','전주']
+
+        best10 = this_week_style.sort_values('이번주', ascending=False).head(10)
+        best10 = best10.merge(prev_week_style, on='스타일코드', how='left')
+        best10['전주'] = best10['전주'].fillna(0)
+        best10['WoW'] = np.where(best10['전주'] > 0,
+            (best10['이번주'] - best10['전주']) / best10['전주'] * 100, np.nan)
+        best10['이번주_만'] = (best10['이번주']/10000).round(1)
+
+        for i, row in best10.iterrows():
+            rank = best10.index.get_loc(i) + 1
+            wow_html = ""
+            if pd.notna(row['WoW']):
+                cls = "up" if row['WoW'] > 0 else "dn"
+                arrow = "▲" if row['WoW'] > 0 else "▼"
+                wow_html = f' <span class="{cls}">{arrow}{abs(row["WoW"]):.0f}%</span>'
+            medal = {1:"🥇",2:"🥈",3:"🥉"}.get(rank, f"{rank}위")
+            name_short = row['대표명'][:22]+'...' if len(row['대표명']) > 22 else row['대표명']
+            st.markdown(
+                f'<div class="rank-row"><b style="font-size:16px;width:36px">{medal}</b>'
+                f'<span style="flex:1">{name_short}</span>'
+                f'<b style="color:#1E88E5">{row["이번주_만"]}만</b>'
+                f'{wow_html}</div>',
+                unsafe_allow_html=True)
+
+    with col_right:
+        st.markdown(f"### 📺 채널별 전주 대비")
+
+        ch_this = this_week_df.groupby('채널')['판매금액'].sum().reset_index().rename(columns={'판매금액':'이번주'})
+        ch_prev = prev_week_df.groupby('채널')['판매금액'].sum().reset_index().rename(columns={'판매금액':'전주'})
+        ch_comp = ch_this.merge(ch_prev, on='채널', how='outer').fillna(0)
+        ch_comp['WoW'] = np.where(ch_comp['전주'] > 0,
+            (ch_comp['이번주'] - ch_comp['전주']) / ch_comp['전주'] * 100, np.nan)
+        ch_comp['이번주_만'] = (ch_comp['이번주']/10000).round(1)
+        ch_comp = ch_comp.sort_values('이번주', ascending=False)
+
+        for _, row in ch_comp.iterrows():
+            if row['이번주'] == 0 and row['전주'] == 0: continue
+            color = CH_COLORS.get(row['채널'], '#999')
+            wow_html = ""
+            if pd.notna(row['WoW']):
+                cls = "up" if row['WoW'] > 0 else "dn"
+                arrow = "▲" if row['WoW'] > 0 else "▼"
+                wow_html = f' <span class="{cls}">{arrow}{abs(row["WoW"]):.0f}%</span>'
+            st.markdown(
+                f'<div class="rank-row">'
+                f'<span style="width:10px;height:10px;border-radius:50%;background:{color};display:inline-block;flex-shrink:0"></span>'
+                f'<span style="flex:1;margin-left:6px">{row["채널"]}</span>'
+                f'<b style="color:#1a1a1a">{row["이번주_만"]}만</b>'
+                f'{wow_html}</div>',
+                unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # 채널별 이번주 바 차트
+        if not ch_comp.empty:
+            fig_ch = go.Figure()
+            fig_ch.add_bar(
+                x=ch_comp['채널'], y=ch_comp['이번주_만'],
+                marker_color=[CH_COLORS.get(c,'#999') for c in ch_comp['채널']],
+                name='이번주', text=ch_comp['이번주_만'].apply(lambda x: f"{x:.1f}만"),
+                textposition='outside')
+            fig_ch.update_layout(height=220, plot_bgcolor='white', showlegend=False,
+                                  yaxis_title='매출(만)', margin=dict(t=10,b=10))
+            st.plotly_chart(fig_ch, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── 월별 매출 추이 ───────────────────────────────────────────────────────
+    st.markdown("### 📈 월별 추이")
     col_a, col_b = st.columns([2,1])
     with col_a:
         fig = go.Figure()
         fig.add_bar(x=monthly['년월'], y=monthly['매출_만'], name='매출(만)', marker_color='#1E88E5', opacity=0.8)
         fig.add_scatter(x=monthly['년월'], y=monthly['실현율'], name='실현율(%)', yaxis='y2',
                         line=dict(color='#E53935',width=2), mode='lines+markers')
+        if targets:
+            tgt_line = [targets.get(ym, None) for ym in monthly['년월']]
+            fig.add_scatter(x=monthly['년월'], y=tgt_line, name='목표(만)', yaxis='y',
+                            line=dict(color='#FB8C00',width=2,dash='dash'), mode='lines+markers')
         fig.update_layout(title="월별 매출 & 실현율", yaxis=dict(title="매출(만)"),
                           yaxis2=dict(title="실현율(%)",overlaying='y',side='right',range=[50,100]),
-                          legend=dict(orientation='h',y=1.1), height=340,
+                          legend=dict(orientation='h',y=1.1), height=320,
                           plot_bgcolor='white', xaxis=dict(tickangle=-45))
         st.plotly_chart(fig, use_container_width=True)
     with col_b:
@@ -242,7 +371,7 @@ with tab1:
         if monthly['YoY'].notna().any():
             fig2.add_scatter(x=monthly['년월'], y=monthly['YoY'].round(1), name='YoY(%)',
                              mode='lines+markers', line=dict(color='#FB8C00',width=2,dash='dot'))
-        fig2.update_layout(title="MoM / YoY", height=340, plot_bgcolor='white',
+        fig2.update_layout(title="MoM / YoY", height=320, plot_bgcolor='white',
                            legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45))
         st.plotly_chart(fig2, use_container_width=True)
 
@@ -317,6 +446,36 @@ with tab3:
                       plot_bgcolor='white', showlegend=False, height=260)
     st.plotly_chart(fig, use_container_width=True)
 
+    # 채널 간 카니발리제이션
+    with st.expander("🔀 채널 카니발리제이션 분석"):
+        ch_monthly_wide = df_all.groupby(['년월','채널'])['판매금액'].sum().unstack(fill_value=0).reset_index()
+        for ch in CHANNELS:
+            if ch not in ch_monthly_wide.columns: ch_monthly_wide[ch] = 0
+        ch_monthly_wide = ch_monthly_wide.sort_values('년월')
+        musinsa_real = df_all[df_all['채널']=='무신사'].groupby('년월')['실현율'].mean().reset_index()
+        musinsa_real.columns = ['년월','무신사_실현율']
+        ch_monthly_wide = ch_monthly_wide.merge(musinsa_real, on='년월', how='left')
+
+        merged = ch_monthly_wide.dropna(subset=['무신사_실현율'])
+        if len(merged) > 3 and '자사몰' in merged.columns:
+            corr = merged['무신사_실현율'].corr(merged['자사몰'])
+            col_x, col_y = st.columns(2)
+            with col_x:
+                st.metric("무신사 실현율 ↔ 자사몰 상관계수", f"{corr:.3f}")
+                if corr < -0.3:
+                    st.markdown('<div class="danger-card">🔴 카니발리제이션 감지</div>', unsafe_allow_html=True)
+                elif corr > 0.3:
+                    st.markdown('<div class="good-card">🟢 헤일로 효과</div>', unsafe_allow_html=True)
+                else:
+                    st.info("채널 간 독립적 움직임")
+            with col_y:
+                ch_for_corr = [ch for ch in CHANNELS if ch in ch_monthly_wide.columns and ch_monthly_wide[ch].sum()>0]
+                if len(ch_for_corr) >= 2:
+                    corr_matrix = ch_monthly_wide[ch_for_corr].corr().round(2)
+                    fig2 = px.imshow(corr_matrix, color_continuous_scale='RdBu_r', zmin=-1, zmax=1, text_auto=True)
+                    fig2.update_layout(height=280)
+                    st.plotly_chart(fig2, use_container_width=True)
+
 # ════════════════════════════════════════════════════════════════════════════
 # TAB 4 — 상품랭킹
 # ════════════════════════════════════════════════════════════════════════════
@@ -358,683 +517,401 @@ with tab4:
         st.dataframe(disp, use_container_width=True, hide_index=True)
 
 # ════════════════════════════════════════════════════════════════════════════
-# TAB 5 — 수명주기 (PLC)
+# TAB 5 — 상품 분석 (수명주기 + 재고소진 + 이상치)
 # ════════════════════════════════════════════════════════════════════════════
 with tab5:
-    st.markdown("### 🔬 상품 수명주기 (PLC) 자동 분류")
-    st.caption("최근 판매 추세 기울기와 누적 판매기간으로 도입→성장→성숙→쇠퇴 자동 태깅")
+    st.markdown("### 🔬 상품 분석")
+    sub_a, sub_b, sub_c = st.tabs(["🔬 수명주기 (PLC)", "⏱️ 재고소진 예측", "🚨 이상치 감지"])
 
-    style_monthly = df_all.groupby(['스타일코드','대표명','년월'])['판매금액'].sum().reset_index()
-    months_sorted = sorted(df_all['년월'].unique())
+    # ── PLC ──────────────────────────────────────────────────────────────────
+    with sub_a:
+        st.caption("최근 판매 추세 기울기와 누적 판매기간으로 도입→성장→성숙→쇠퇴 자동 태깅")
+        style_monthly = df_all.groupby(['스타일코드','대표명','년월'])['판매금액'].sum().reset_index()
+        months_sorted = sorted(df_all['년월'].unique())
+        plc_rows = []
+        for (sc, nm), grp in style_monthly.groupby(['스타일코드','대표명']):
+            grp = grp.sort_values('년월')
+            first_sale = grp[grp['판매금액']>0]['년월'].min()
+            if pd.isna(first_sale): continue
+            months_active = len(months_sorted) - months_sorted.index(first_sale)
+            recent_3 = grp[grp['년월'] >= months_sorted[-3]]['판매금액'].sum() if len(months_sorted)>=3 else 0
+            prev_3_start = max(0, len(months_sorted)-6)
+            prev_3 = grp[(grp['년월'] >= months_sorted[prev_3_start]) & (grp['년월'] < months_sorted[-3])]['판매금액'].sum()
+            all_m = months_sorted
+            y = [grp[grp['년월']==m]['판매금액'].sum() if m in grp['년월'].values else 0 for m in all_m]
+            slope, _, _, _, _ = stats.linregress(range(len(y)), y) if len(y) >= 3 and sum(y) > 0 else (0,0,0,0,0)
+            trend_pct = (recent_3-prev_3)/prev_3*100 if prev_3>0 else 0
+            total_rev = grp['판매금액'].sum()
+            if months_active <= 3: plc = '🌱 도입'
+            elif slope > 50000 and trend_pct > 10: plc = '🚀 성장'
+            elif abs(slope) <= 50000 and total_rev > 5000000: plc = '💪 성숙'
+            elif slope < -50000 or trend_pct < -30: plc = '📉 쇠퇴'
+            else: plc = '➡️ 유지'
+            plc_rows.append({'스타일코드':sc,'상품명':nm,'PLC':plc,'총매출_만':round(total_rev/10000),
+                             '판매기간(월)':months_active,'최근3개월_만':round(recent_3/10000),
+                             '추세변화(%)':round(trend_pct,1),'기울기':round(slope)})
+        plc_df = pd.DataFrame(plc_rows).sort_values('총매출_만', ascending=False)
+        plc_counts = plc_df['PLC'].value_counts()
+        cols = st.columns(5)
+        for i, (label, color) in enumerate([('🌱 도입','#43A047'),('🚀 성장','#1E88E5'),
+                                             ('💪 성숙','#FB8C00'),('📉 쇠퇴','#E53935'),('➡️ 유지','#757575')]):
+            kpi_card(cols[i], label, f"{plc_counts.get(label,0)}개", color=color)
+        fig = px.scatter(plc_df, x='판매기간(월)', y='최근3개월_만', size='총매출_만',
+                         color='PLC', hover_data=['상품명','추세변화(%)'],
+                         title='PLC 포지션 맵 (크기=누적 매출)',
+                         color_discrete_map={'🌱 도입':'#43A047','🚀 성장':'#1E88E5',
+                                             '💪 성숙':'#FB8C00','📉 쇠퇴':'#E53935','➡️ 유지':'#9E9E9E'})
+        fig.update_layout(height=380, plot_bgcolor='white')
+        st.plotly_chart(fig, use_container_width=True)
+        plc_filter = st.multiselect("PLC 단계 필터", ['🌱 도입','🚀 성장','💪 성숙','📉 쇠퇴','➡️ 유지'],
+                                     default=['🚀 성장','📉 쇠퇴'])
+        filtered_plc = plc_df[plc_df['PLC'].isin(plc_filter)] if plc_filter else plc_df
+        st.dataframe(filtered_plc[['상품명','PLC','총매출_만','판매기간(월)','최근3개월_만','추세변화(%)']],
+                     use_container_width=True, hide_index=True)
 
-    plc_rows = []
-    for (sc, nm), grp in style_monthly.groupby(['스타일코드','대표명']):
-        grp = grp.sort_values('년월')
-        first_sale = grp[grp['판매금액']>0]['년월'].min()
-        if pd.isna(first_sale): continue
-        months_active = len(months_sorted) - months_sorted.index(first_sale)
-        recent_3 = grp[grp['년월'] >= months_sorted[-3]]['판매금액'].sum() if len(months_sorted)>=3 else 0
-        prev_3_start = max(0, len(months_sorted)-6)
-        prev_3 = grp[(grp['년월'] >= months_sorted[prev_3_start]) & (grp['년월'] < months_sorted[-3])]['판매금액'].sum()
-
-        # 선형 기울기
-        all_m = months_sorted
-        y = [grp[grp['년월']==m]['판매금액'].sum() if m in grp['년월'].values else 0 for m in all_m]
-        if len(y) >= 3 and sum(y) > 0:
-            slope, _, _, _, _ = stats.linregress(range(len(y)), y)
-        else:
-            slope = 0
-
-        trend_pct = (recent_3-prev_3)/prev_3*100 if prev_3>0 else 0
-        total_rev = grp['판매금액'].sum()
-
-        # PLC 분류
-        if months_active <= 3:
-            plc = '🌱 도입'
-        elif slope > 50000 and trend_pct > 10:
-            plc = '🚀 성장'
-        elif abs(slope) <= 50000 and total_rev > 5000000:
-            plc = '💪 성숙'
-        elif slope < -50000 or trend_pct < -30:
-            plc = '📉 쇠퇴'
-        else:
-            plc = '➡️ 유지'
-
-        plc_rows.append({'스타일코드':sc,'상품명':nm,'PLC':plc,'총매출_만':round(total_rev/10000),
-                         '판매기간(월)':months_active,'최근3개월_만':round(recent_3/10000),
-                         '추세변화(%)':round(trend_pct,1),'기울기':round(slope)})
-
-    plc_df = pd.DataFrame(plc_rows).sort_values('총매출_만', ascending=False)
-
-    # PLC 요약
-    plc_counts = plc_df['PLC'].value_counts()
-    cols = st.columns(5)
-    for i, (label, color) in enumerate([('🌱 도입','#43A047'),('🚀 성장','#1E88E5'),
-                                         ('💪 성숙','#FB8C00'),('📉 쇠퇴','#E53935'),('➡️ 유지','#757575')]):
-        cnt = plc_counts.get(label, 0)
-        kpi_card(cols[i], label, f"{cnt}개", color=color)
-
-    # 산점도
-    fig = px.scatter(plc_df, x='판매기간(월)', y='최근3개월_만', size='총매출_만',
-                     color='PLC', hover_data=['상품명','추세변화(%)'],
-                     title='PLC 포지션 맵 (크기=누적 매출)',
-                     color_discrete_map={'🌱 도입':'#43A047','🚀 성장':'#1E88E5',
-                                         '💪 성숙':'#FB8C00','📉 쇠퇴':'#E53935','➡️ 유지':'#9E9E9E'})
-    fig.update_layout(height=400, plot_bgcolor='white')
-    st.plotly_chart(fig, use_container_width=True)
-
-    # 필터 테이블
-    plc_filter = st.multiselect("PLC 단계 필터", ['🌱 도입','🚀 성장','💪 성숙','📉 쇠퇴','➡️ 유지'],
-                                 default=['🚀 성장','📉 쇠퇴'])
-    filtered_plc = plc_df[plc_df['PLC'].isin(plc_filter)] if plc_filter else plc_df
-    st.dataframe(filtered_plc[['상품명','PLC','총매출_만','판매기간(월)','최근3개월_만','추세변화(%)']],
-                 use_container_width=True, hide_index=True)
-
-# ════════════════════════════════════════════════════════════════════════════
-# TAB 6 — 재고 소진 예측
-# ════════════════════════════════════════════════════════════════════════════
-with tab6:
-    st.markdown("### ⏱️ 재고 소진 예측")
-    st.caption("최근 4주 판매 속도 vs 이전 4주 비교 — 급감 = 재고 소진 신호")
-
-    last_date = df_all['날짜'].max()
-    w4_start = last_date - timedelta(weeks=4)
-    w8_start = last_date - timedelta(weeks=8)
-
-    recent4 = df_all[df_all['날짜'] > w4_start].groupby(['스타일코드','대표명']).agg(
-        최근4주_수량=('수량','sum'), 최근4주_매출=('판매금액','sum'),
-        마지막판매=('날짜','max')).reset_index()
-    prev4 = df_all[(df_all['날짜'] > w8_start) & (df_all['날짜'] <= w4_start)].groupby('스타일코드').agg(
-        이전4주_수량=('수량','sum')).reset_index()
-
-    inv_df = recent4.merge(prev4, on='스타일코드', how='left')
-    inv_df['이전4주_수량'] = inv_df['이전4주_수량'].fillna(0)
-    inv_df['수량변화(%)'] = np.where(inv_df['이전4주_수량']>0,
-        (inv_df['최근4주_수량']-inv_df['이전4주_수량'])/inv_df['이전4주_수량']*100, 0)
-    inv_df['경과일'] = (last_date - inv_df['마지막판매']).dt.days
-
-    def risk_level(row):
-        if row['경과일'] > 14 and row['최근4주_수량'] == 0: return '🔴 소진 의심'
-        if row['수량변화(%)'] < -60 or (row['경과일'] > 7 and row['최근4주_수량'] < 3): return '🟡 소진 임박'
-        if row['수량변화(%)'] < -30: return '🟠 감소 주의'
-        return '🟢 정상'
-    inv_df['리스크'] = inv_df.apply(risk_level, axis=1)
-    inv_df['최근4주_매출_만'] = (inv_df['최근4주_매출']/10000).round(1)
-    inv_df['마지막판매'] = inv_df['마지막판매'].dt.strftime('%Y-%m-%d')
-    inv_df = inv_df.sort_values('수량변화(%)')
-
-    # 요약
-    rc = inv_df['리스크'].value_counts()
-    c1,c2,c3,c4 = st.columns(4)
-    kpi_card(c1, "🔴 소진 의심", f"{rc.get('🔴 소진 의심',0)}개", color="#E53935")
-    kpi_card(c2, "🟡 소진 임박", f"{rc.get('🟡 소진 임박',0)}개", color="#FB8C00")
-    kpi_card(c3, "🟠 감소 주의", f"{rc.get('🟠 감소 주의',0)}개", color="#FF6F00")
-    kpi_card(c4, "🟢 정상", f"{rc.get('🟢 정상',0)}개", color="#43A047")
-
-    st.markdown("#### 위험 상품 목록")
-    danger = inv_df[inv_df['리스크'] != '🟢 정상']
-    for _, row in danger.iterrows():
-        cls = 'danger-card' if '🔴' in row['리스크'] else 'warn-card'
-        st.markdown(f'<div class="{cls}"><b>{row["리스크"]} {row["대표명"]}</b> — 최근4주 {int(row["최근4주_수량"])}개 (이전 대비 {row["수량변화(%)"]:.0f}%) | 마지막판매: {row["마지막판매"]} ({int(row["경과일"])}일 전)</div>', unsafe_allow_html=True)
-
-    # 전체 차트
-    top_risk = inv_df[inv_df['이전4주_수량']>0].head(20)
-    fig = go.Figure(go.Bar(
-        x=top_risk['수량변화(%)'].round(0),
-        y=top_risk['대표명'].apply(lambda x: x[:18]+'...' if len(x)>18 else x),
-        orientation='h',
-        marker_color=['#E53935' if v<-60 else '#FB8C00' if v<-30 else '#43A047' for v in top_risk['수량변화(%)']],
-        text=top_risk['수량변화(%)'].apply(lambda x: f"{x:.0f}%"), textposition='outside'))
-    fig.update_layout(title='최근 4주 판매량 변화 TOP20', height=500, plot_bgcolor='white',
-                      yaxis=dict(autorange='reversed'), xaxis_title='변화(%)')
-    st.plotly_chart(fig, use_container_width=True)
-
-# ════════════════════════════════════════════════════════════════════════════
-# TAB 7 — 이상치 감지
-# ════════════════════════════════════════════════════════════════════════════
-with tab7:
-    st.markdown("### 🚨 이상치 자동 감지")
-    st.caption("전주 vs 4주 평균 대비 ±30% 이상 급변 상품 자동 감지")
-
-    weekly = df_all.groupby(['주차','스타일코드','대표명'])['판매금액'].sum().reset_index()
-    weeks_sorted = sorted(df_all['주차'].unique())
-    if len(weeks_sorted) < 2:
-        st.warning("주차 데이터가 부족합니다.")
-    else:
-        last_w = weeks_sorted[-1]
-        prev_4w = weeks_sorted[max(0,len(weeks_sorted)-5):-1]
-
-        last_week = weekly[weekly['주차']==last_w].set_index('스타일코드')['판매금액']
-        avg_4w = weekly[weekly['주차'].isin(prev_4w)].groupby('스타일코드')['판매금액'].mean()
-
-        anomaly_rows = []
-        for sc in set(last_week.index) | set(avg_4w.index):
-            lw = last_week.get(sc, 0)
-            a4 = avg_4w.get(sc, 0)
-            if a4 == 0 and lw == 0: continue
-            chg = (lw-a4)/a4*100 if a4>0 else (100 if lw>0 else 0)
-            nm = df_all[df_all['스타일코드']==sc]['대표명'].mode()
-            nm = nm.iloc[0] if len(nm)>0 else sc
-            if abs(chg) >= 30 or (a4>0 and lw==0):
-                anomaly_rows.append({'스타일코드':sc,'상품명':nm,'이번주_만':round(lw/10000,1),
-                                     '4주평균_만':round(a4/10000,1),'변화(%)':round(chg,1)})
-
-        anom_df = pd.DataFrame(anomaly_rows).sort_values('변화(%)')
-
-        if anom_df.empty:
-            st.success("이번 주 이상치 없음")
-        else:
-            surge = anom_df[anom_df['변화(%)'] >= 30].sort_values('변화(%)', ascending=False)
-            drop = anom_df[anom_df['변화(%)'] < -30].sort_values('변화(%)')
-
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.markdown(f"#### 🔺 급등 ({len(surge)}개)")
-                for _, r in surge.iterrows():
-                    st.markdown(f'<div class="good-card"><b>{r["상품명"]}</b><br>이번주 {r["이번주_만"]}만 | 4주평균 {r["4주평균_만"]}만 | <b>+{r["변화(%)"]:.0f}%</b></div>', unsafe_allow_html=True)
-            with col_b:
-                st.markdown(f"#### 🔻 급락 ({len(drop)}개)")
-                for _, r in drop.iterrows():
-                    st.markdown(f'<div class="danger-card"><b>{r["상품명"]}</b><br>이번주 {r["이번주_만"]}만 | 4주평균 {r["4주평균_만"]}만 | <b>{r["변화(%)"]:.0f}%</b></div>', unsafe_allow_html=True)
-
-        # 주간 전체 매출 추이
-        weekly_total = df_all.groupby('주차')['판매금액'].sum().reset_index()
-        weekly_total['매출_만'] = (weekly_total['판매금액']/10000).round()
-        weekly_total['4주이동평균'] = weekly_total['매출_만'].rolling(4, min_periods=1).mean().round()
-        fig = go.Figure()
-        fig.add_bar(x=weekly_total['주차'], y=weekly_total['매출_만'], name='주간매출', marker_color='#90CAF9')
-        fig.add_scatter(x=weekly_total['주차'], y=weekly_total['4주이동평균'], name='4주 이동평균',
-                        line=dict(color='#E53935',width=2))
-        fig.update_layout(title='주간 매출 추이', height=300, plot_bgcolor='white',
-                          legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45, nticks=10))
+    # ── 재고소진 예측 ─────────────────────────────────────────────────────────
+    with sub_b:
+        st.caption("최근 4주 판매 속도 vs 이전 4주 비교 — 급감 = 재고 소진 신호")
+        last_date2 = df_all['날짜'].max()
+        w4_start = last_date2 - timedelta(weeks=4)
+        w8_start = last_date2 - timedelta(weeks=8)
+        recent4 = df_all[df_all['날짜'] > w4_start].groupby(['스타일코드','대표명']).agg(
+            최근4주_수량=('수량','sum'), 최근4주_매출=('판매금액','sum'),
+            마지막판매=('날짜','max')).reset_index()
+        prev4 = df_all[(df_all['날짜'] > w8_start) & (df_all['날짜'] <= w4_start)].groupby('스타일코드').agg(
+            이전4주_수량=('수량','sum')).reset_index()
+        inv_df = recent4.merge(prev4, on='스타일코드', how='left')
+        inv_df['이전4주_수량'] = inv_df['이전4주_수량'].fillna(0)
+        inv_df['수량변화(%)'] = np.where(inv_df['이전4주_수량']>0,
+            (inv_df['최근4주_수량']-inv_df['이전4주_수량'])/inv_df['이전4주_수량']*100, 0)
+        inv_df['경과일'] = (last_date2 - inv_df['마지막판매']).dt.days
+        def risk_level(row):
+            if row['경과일'] > 14 and row['최근4주_수량'] == 0: return '🔴 소진 의심'
+            if row['수량변화(%)'] < -60 or (row['경과일'] > 7 and row['최근4주_수량'] < 3): return '🟡 소진 임박'
+            if row['수량변화(%)'] < -30: return '🟠 감소 주의'
+            return '🟢 정상'
+        inv_df['리스크'] = inv_df.apply(risk_level, axis=1)
+        inv_df['최근4주_매출_만'] = (inv_df['최근4주_매출']/10000).round(1)
+        inv_df['마지막판매'] = inv_df['마지막판매'].dt.strftime('%Y-%m-%d')
+        inv_df = inv_df.sort_values('수량변화(%)')
+        rc = inv_df['리스크'].value_counts()
+        c1,c2,c3,c4 = st.columns(4)
+        kpi_card(c1, "🔴 소진 의심", f"{rc.get('🔴 소진 의심',0)}개", color="#E53935")
+        kpi_card(c2, "🟡 소진 임박", f"{rc.get('🟡 소진 임박',0)}개", color="#FB8C00")
+        kpi_card(c3, "🟠 감소 주의", f"{rc.get('🟠 감소 주의',0)}개", color="#FF6F00")
+        kpi_card(c4, "🟢 정상", f"{rc.get('🟢 정상',0)}개", color="#43A047")
+        danger = inv_df[inv_df['리스크'] != '🟢 정상']
+        for _, row in danger.iterrows():
+            cls = 'danger-card' if '🔴' in row['리스크'] else 'warn-card'
+            st.markdown(f'<div class="{cls}"><b>{row["리스크"]} {row["대표명"]}</b> — 최근4주 {int(row["최근4주_수량"])}개 (전주 대비 {row["수량변화(%)"]:.0f}%) | 마지막판매: {row["마지막판매"]} ({int(row["경과일"])}일 전)</div>', unsafe_allow_html=True)
+        top_risk = inv_df[inv_df['이전4주_수량']>0].head(20)
+        fig = go.Figure(go.Bar(
+            x=top_risk['수량변화(%)'].round(0),
+            y=top_risk['대표명'].apply(lambda x: x[:18]+'...' if len(x)>18 else x),
+            orientation='h',
+            marker_color=['#E53935' if v<-60 else '#FB8C00' if v<-30 else '#43A047' for v in top_risk['수량변화(%)']],
+            text=top_risk['수량변화(%)'].apply(lambda x: f"{x:.0f}%"), textposition='outside'))
+        fig.update_layout(title='최근 4주 판매량 변화 TOP20', height=500, plot_bgcolor='white',
+                          yaxis=dict(autorange='reversed'), xaxis_title='변화(%)')
         st.plotly_chart(fig, use_container_width=True)
 
-# ════════════════════════════════════════════════════════════════════════════
-# TAB 8 — 시즌 보정 성과
-# ════════════════════════════════════════════════════════════════════════════
-with tab8:
-    st.markdown("### 📈 시즌 보정 실질 성과")
-    st.caption("SS/FW 시즌성을 제거한 보정 성장률 — 진짜 성장인지 시즌 효과인지 구분")
-
-    monthly_all = df_all.groupby(['년월','월'])['판매금액'].sum().reset_index()
-    monthly_all['매출_만'] = (monthly_all['판매금액']/10000).round()
-
-    # 월별 시즌 인덱스 (전체 평균 대비)
-    month_avg = monthly_all.groupby('월')['판매금액'].mean()
-    overall_avg = monthly_all['판매금액'].mean()
-    season_idx = (month_avg / overall_avg).round(3)
-
-    monthly_all['시즌인덱스'] = monthly_all['월'].map(season_idx)
-    monthly_all['보정매출_만'] = (monthly_all['매출_만'] / monthly_all['시즌인덱스']).round()
-
-    fig = go.Figure()
-    fig.add_scatter(x=monthly_all['년월'], y=monthly_all['매출_만'], name='실제 매출',
-                    line=dict(color='#90CAF9',width=2), mode='lines+markers')
-    fig.add_scatter(x=monthly_all['년월'], y=monthly_all['보정매출_만'], name='시즌 보정 매출',
-                    line=dict(color='#1E88E5',width=2,dash='dash'), mode='lines+markers')
-    fig.update_layout(title='실제 매출 vs 시즌 보정 매출', height=350,
-                      plot_bgcolor='white', yaxis_title='매출(만)',
-                      legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45))
-    st.plotly_chart(fig, use_container_width=True)
-
-    col_a,col_b = st.columns(2)
-    with col_a:
-        st.markdown("#### 월별 시즌 인덱스")
-        st.caption("1.0 = 평균, 1.5 = 평균보다 50% 높은 시즌")
-        si_df = season_idx.reset_index()
-        si_df.columns = ['월','시즌인덱스']
-        si_df['해석'] = si_df['시즌인덱스'].apply(lambda x: '성수기🔥' if x>=1.2 else ('비수기❄️' if x<=0.8 else '보통'))
-        month_names = {1:'1월',2:'2월',3:'3월',4:'4월',5:'5월',6:'6월',
-                       7:'7월',8:'8월',9:'9월',10:'10월',11:'11월',12:'12월'}
-        si_df['월명'] = si_df['월'].map(month_names)
-        fig2 = go.Figure(go.Bar(x=si_df['월명'], y=si_df['시즌인덱스'],
-                                marker_color=['#E53935' if x>=1.2 else '#1E88E5' if x<=0.8 else '#90CAF9' for x in si_df['시즌인덱스']],
-                                text=si_df['시즌인덱스'].apply(lambda x: f"{x:.2f}"), textposition='outside'))
-        fig2.add_hline(y=1.0, line_dash='dash', line_color='gray')
-        fig2.update_layout(height=300, plot_bgcolor='white', yaxis_title='인덱스')
-        st.plotly_chart(fig2, use_container_width=True)
-    with col_b:
-        st.markdown("#### 보정 성장률 (MoM)")
-        monthly_all['보정_MoM'] = monthly_all['보정매출_만'].pct_change()*100
-        monthly_all['실제_MoM'] = monthly_all['매출_만'].pct_change()*100
-        comp = monthly_all[['년월','실제_MoM','보정_MoM']].dropna()
-        fig3 = go.Figure()
-        fig3.add_bar(x=comp['년월'], y=comp['실제_MoM'].round(1), name='실제 MoM',
-                     marker_color='#90CAF9', opacity=0.7)
-        fig3.add_scatter(x=comp['년월'], y=comp['보정_MoM'].round(1), name='보정 MoM',
-                         mode='lines+markers', line=dict(color='#1E88E5',width=2))
-        fig3.update_layout(height=300, plot_bgcolor='white', yaxis_title='%',
-                           legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45))
-        st.plotly_chart(fig3, use_container_width=True)
-
-# ════════════════════════════════════════════════════════════════════════════
-# TAB 9 — 팝업 분석
-# ════════════════════════════════════════════════════════════════════════════
-with tab9:
-    st.markdown("### 🏪 팝업(더현대) 분석")
-
-    popup_df = df_all[df_all['채널']=='팝업(더현대)'].copy()
-    online_df = df_all[df_all['채널']!='팝업(더현대)'].copy()
-
-    if popup_df.empty:
-        st.info("팝업 데이터가 없습니다.")
-    else:
-        popup_periods = sorted(popup_df['년월'].unique())
-        st.markdown(f"**팝업 운영 기간:** {popup_periods[0]} ~ {popup_periods[-1]} ({len(popup_periods)}개월)")
-
-        c1,c2,c3 = st.columns(3)
-        kpi_card(c1, "팝업 총 매출", f"{popup_df['판매금액'].sum()/10000:,.0f}만", color="#8E24AA")
-        kpi_card(c2, "팝업 총 수량", f"{int(popup_df['수량'].sum()):,}개", color="#8E24AA")
-        kpi_card(c3, "팝업 SKU 수", f"{popup_df['스타일코드'].nunique()}개", color="#8E24AA")
-
-        # 팝업 상품 순위
-        popup_style = popup_df.groupby(['스타일코드','대표명','카테고리']).agg(
-            팝업매출=('판매금액','sum'), 팝업수량=('수량','sum')).reset_index()
-        popup_style = popup_style.sort_values('팝업매출', ascending=False).reset_index(drop=True)
-        popup_style['팝업매출_만'] = (popup_style['팝업매출']/10000).round(1)
-
-        # 온라인 동일 상품 비교
-        online_style = online_df.groupby('스타일코드').agg(
-            온라인매출=('판매금액','sum'), 온라인수량=('수량','sum')).reset_index()
-        compare = popup_style.merge(online_style, on='스타일코드', how='left')
-        compare['온라인매출_만'] = (compare['온라인매출'].fillna(0)/10000).round(1)
-        compare['온라인비율'] = (compare['팝업매출']/(compare['팝업매출']+compare['온라인매출'].fillna(0))*100).round(1)
-
-        col_a,col_b = st.columns([3,2])
-        with col_a:
-            st.markdown("#### 팝업 TOP10 상품 & 온라인 비교")
-            top10 = compare.head(10)
-            fig = go.Figure()
-            fig.add_bar(name='팝업 매출', x=top10['대표명'].apply(lambda x: x[:15]+'...' if len(x)>15 else x),
-                        y=top10['팝업매출_만'], marker_color='#8E24AA')
-            fig.add_bar(name='온라인 매출', x=top10['대표명'].apply(lambda x: x[:15]+'...' if len(x)>15 else x),
-                        y=top10['온라인매출_만'], marker_color='#CE93D8')
-            fig.update_layout(barmode='group', title='팝업 vs 온라인 매출 비교 (TOP10)',
-                              height=380, plot_bgcolor='white',
-                              legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-30))
-            st.plotly_chart(fig, use_container_width=True)
-        with col_b:
-            st.markdown("#### 팝업 전용 상품 (온라인 없음)")
-            popup_only = compare[compare['온라인매출'].isna() | (compare['온라인매출']==0)]
-            if not popup_only.empty:
-                for _, r in popup_only.head(8).iterrows():
-                    st.markdown(f'<div class="warn-card"><b>{r["대표명"]}</b><br>{r["카테고리"]} | 팝업 {r["팝업매출_만"]}만 | {int(r["팝업수량"])}개</div>', unsafe_allow_html=True)
+    # ── 이상치 감지 ───────────────────────────────────────────────────────────
+    with sub_c:
+        st.caption("전주 vs 4주 평균 대비 ±30% 이상 급변 상품 자동 감지")
+        weekly = df_all.groupby(['주차','스타일코드','대표명'])['판매금액'].sum().reset_index()
+        weeks_sorted = sorted(df_all['주차'].unique())
+        if len(weeks_sorted) < 2:
+            st.warning("주차 데이터가 부족합니다.")
+        else:
+            last_w = weeks_sorted[-1]
+            prev_4w = weeks_sorted[max(0,len(weeks_sorted)-5):-1]
+            last_week_s = weekly[weekly['주차']==last_w].set_index('스타일코드')['판매금액']
+            avg_4w = weekly[weekly['주차'].isin(prev_4w)].groupby('스타일코드')['판매금액'].mean()
+            anomaly_rows = []
+            for sc in set(last_week_s.index) | set(avg_4w.index):
+                lw = last_week_s.get(sc, 0)
+                a4 = avg_4w.get(sc, 0)
+                if a4 == 0 and lw == 0: continue
+                chg = (lw-a4)/a4*100 if a4>0 else (100 if lw>0 else 0)
+                nm = df_all[df_all['스타일코드']==sc]['대표명'].mode()
+                nm = nm.iloc[0] if len(nm)>0 else sc
+                if abs(chg) >= 30 or (a4>0 and lw==0):
+                    anomaly_rows.append({'스타일코드':sc,'상품명':nm,'이번주_만':round(lw/10000,1),
+                                         '4주평균_만':round(a4/10000,1),'변화(%)':round(chg,1)})
+            anom_df = pd.DataFrame(anomaly_rows).sort_values('변화(%)')
+            if anom_df.empty:
+                st.success("이번 주 이상치 없음")
             else:
-                st.info("팝업 전용 상품 없음 (모든 상품이 온라인에도 있음)")
-
-        # 팝업 기간 온라인 매출 변화 (헤일로 or 카니발리제이션)
-        st.markdown("#### 팝업 기간 온라인 채널 영향")
-        st.caption("팝업 운영 월의 온라인 매출이 전월 대비 증가 = 헤일로 효과 / 감소 = 카니발리제이션")
-
-        popup_month_rev = online_df[online_df['년월'].isin(popup_periods)].groupby('년월')['판매금액'].sum()
-        all_monthly_online = online_df.groupby('년월')['판매금액'].sum().sort_index()
-
-        halo_fig = go.Figure()
-        halo_fig.add_scatter(x=all_monthly_online.index, y=(all_monthly_online/10000).round(),
-                             name='온라인 전체', mode='lines+markers', line=dict(color='#1E88E5',width=2))
-        if not popup_month_rev.empty:
-            halo_fig.add_scatter(x=popup_month_rev.index, y=(popup_month_rev/10000).round(),
-                                 name='팝업 운영월', mode='markers',
-                                 marker=dict(color='#8E24AA',size=12,symbol='star'))
-        halo_fig.update_layout(title='온라인 매출 추이 + 팝업 운영월 표시',
-                               height=300, plot_bgcolor='white',
-                               legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45))
-        st.plotly_chart(halo_fig, use_container_width=True)
-
-        # 상세 테이블
-        with st.expander("📋 팝업 전체 상품 목록"):
-            disp = compare[['대표명','카테고리','팝업매출_만','팝업수량','온라인매출_만','온라인비율']].copy()
-            disp['온라인비율'] = disp['온라인비율'].apply(lambda x: f"{x}%")
-            disp.columns = ['상품명','카테고리','팝업매출(만)','팝업수량','온라인매출(만)','팝업비율(%)']
-            st.dataframe(disp, use_container_width=True, hide_index=True)
-
-# ════════════════════════════════════════════════════════════════════════════
-# TAB 10 — 채널 카니발리제이션
-# ════════════════════════════════════════════════════════════════════════════
-with tab10:
-    st.markdown("### 🔀 채널 카니발리제이션 분석")
-    st.caption("무신사 할인(실현율↓) 기간에 자사몰 매출이 감소하는지 상관관계 분석")
-
-    ch_monthly_wide = df_all.groupby(['년월','채널'])['판매금액'].sum().unstack(fill_value=0)
-    ch_monthly_wide.columns.name = None
-    ch_monthly_wide = ch_monthly_wide.reset_index()
-    for ch in CHANNELS:
-        if ch not in ch_monthly_wide.columns:
-            ch_monthly_wide[ch] = 0
-    ch_monthly_wide = ch_monthly_wide.sort_values('년월')
-
-    # 무신사 실현율 월별
-    musinsa_real = df_all[df_all['채널']=='무신사'].groupby('년월')['실현율'].mean().reset_index()
-    musinsa_real.columns = ['년월','무신사_실현율']
-    ch_monthly_wide = ch_monthly_wide.merge(musinsa_real, on='년월', how='left')
-
-    col_a,col_b = st.columns(2)
-    with col_a:
-        # 무신사 실현율 vs 자사몰 매출
-        merged = ch_monthly_wide.dropna(subset=['무신사_실현율'])
-        if len(merged) > 3 and '자사몰' in merged.columns:
-            corr = merged['무신사_실현율'].corr(merged['자사몰'])
-            st.metric("무신사 실현율 ↔ 자사몰 매출 상관계수", f"{corr:.3f}",
-                      help="양수=같이 움직임, 음수=반대로 움직임(카니발리제이션)")
-            if corr < -0.3:
-                st.markdown('<div class="danger-card">🔴 카니발리제이션 감지: 무신사 할인 시 자사몰 매출 감소 경향</div>', unsafe_allow_html=True)
-            elif corr > 0.3:
-                st.markdown('<div class="good-card">🟢 헤일로 효과: 무신사 할인 시 자사몰도 함께 상승</div>', unsafe_allow_html=True)
-            else:
-                st.info("📊 채널 간 독립적 움직임 — 카니발리제이션 없음")
-
+                surge = anom_df[anom_df['변화(%)'] >= 30].sort_values('변화(%)', ascending=False)
+                drop = anom_df[anom_df['변화(%)'] < -30].sort_values('변화(%)')
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.markdown(f"#### 🔺 급등 ({len(surge)}개)")
+                    for _, r in surge.iterrows():
+                        st.markdown(f'<div class="good-card"><b>{r["상품명"]}</b><br>이번주 {r["이번주_만"]}만 | 4주평균 {r["4주평균_만"]}만 | <b>+{r["변화(%)"]:.0f}%</b></div>', unsafe_allow_html=True)
+                with col_b:
+                    st.markdown(f"#### 🔻 급락 ({len(drop)}개)")
+                    for _, r in drop.iterrows():
+                        st.markdown(f'<div class="danger-card"><b>{r["상품명"]}</b><br>이번주 {r["이번주_만"]}만 | 4주평균 {r["4주평균_만"]}만 | <b>{r["변화(%)"]:.0f}%</b></div>', unsafe_allow_html=True)
+            weekly_total = df_all.groupby('주차')['판매금액'].sum().reset_index()
+            weekly_total['매출_만'] = (weekly_total['판매금액']/10000).round()
+            weekly_total['4주이동평균'] = weekly_total['매출_만'].rolling(4, min_periods=1).mean().round()
             fig = go.Figure()
-            fig.add_scatter(x=merged['년월'], y=merged['무신사_실현율'],
-                            name='무신사 실현율(%)', yaxis='y2',
-                            line=dict(color='#1E88E5',width=2,dash='dash'), mode='lines+markers')
-            fig.add_bar(x=merged['년월'], y=(merged['자사몰']/10000).round(),
-                        name='자사몰 매출(만)', marker_color='#43A047', opacity=0.7)
-            fig.update_layout(title='무신사 실현율 vs 자사몰 매출',
-                              yaxis=dict(title='자사몰 매출(만)'),
-                              yaxis2=dict(title='실현율(%)',overlaying='y',side='right',range=[60,100]),
-                              height=340, plot_bgcolor='white',
-                              legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45))
+            fig.add_bar(x=weekly_total['주차'], y=weekly_total['매출_만'], name='주간매출', marker_color='#90CAF9')
+            fig.add_scatter(x=weekly_total['주차'], y=weekly_total['4주이동평균'], name='4주 이동평균',
+                            line=dict(color='#E53935',width=2))
+            fig.update_layout(title='주간 매출 추이', height=300, plot_bgcolor='white',
+                              legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45, nticks=10))
             st.plotly_chart(fig, use_container_width=True)
 
-    with col_b:
-        # 채널 간 상관 히트맵
-        ch_for_corr = [ch for ch in CHANNELS if ch in ch_monthly_wide.columns and ch_monthly_wide[ch].sum()>0]
-        if len(ch_for_corr) >= 2:
-            corr_matrix = ch_monthly_wide[ch_for_corr].corr().round(2)
-            fig2 = px.imshow(corr_matrix, title='채널 간 매출 상관관계',
-                             color_continuous_scale='RdBu_r', zmin=-1, zmax=1,
-                             text_auto=True)
-            fig2.update_layout(height=340)
-            st.plotly_chart(fig2, use_container_width=True)
-            st.caption("1.0 = 완전 동행 | -1.0 = 완전 반대 | 0 = 무관계")
-
-    # 채널별 월별 비중 변화
-    ch_pct = ch_monthly_wide.copy()
-    total = ch_pct[CHANNELS].sum(axis=1)
-    for ch in CHANNELS:
-        if ch in ch_pct.columns:
-            ch_pct[ch] = (ch_pct[ch]/total*100).round(1)
-    ch_pct_melt = ch_pct[['년월']+[ch for ch in CHANNELS if ch in ch_pct.columns]].melt(id_vars='년월', var_name='채널', value_name='비중(%)')
-    fig3 = px.area(ch_pct_melt, x='년월', y='비중(%)', color='채널',
-                   title='채널 비중 변화 추이', color_discrete_map=CH_COLORS)
-    fig3.update_layout(height=300, plot_bgcolor='white',
-                       legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45))
-    st.plotly_chart(fig3, use_container_width=True)
-
 # ════════════════════════════════════════════════════════════════════════════
-# TAB 11 — 관리
+# TAB 6 — 팝업 & 마케팅
 # ════════════════════════════════════════════════════════════════════════════
-# ════════════════════════════════════════════════════════════════════════════
-# TAB 11 — 마케팅
-# ════════════════════════════════════════════════════════════════════════════
-with tab11:
-    st.markdown("### 📣 마케팅 효율 분석")
+with tab6:
+    st.markdown("### 🏪 팝업 & 마케팅")
+    pm_sub = st.tabs(["🏪 팝업 분석", "📣 마케팅 효율", "💡 이번주 인사이트"])
 
-    mktg = load_marketing(str(MKTG_FILE))
-    if mktg is None:
-        st.warning(f"마케팅 파일을 찾을 수 없습니다: {MKTG_FILE}")
-    else:
-        meta_ms = mktg['meta_ms']
-        meta_js = mktg['meta_js']
-        prod_ms = mktg['prod_ms']
-        prod_29 = mktg['prod_29']
+    # ── 팝업 분석 ─────────────────────────────────────────────────────────────
+    with pm_sub[0]:
+        popup_df = df_all[df_all['채널']=='팝업(더현대)'].copy()
+        online_df = df_all[df_all['채널']!='팝업(더현대)'].copy()
+        if popup_df.empty:
+            st.info("팝업 데이터가 없습니다.")
+        else:
+            popup_periods = sorted(popup_df['년월'].unique())
+            st.markdown(f"**팝업 운영 기간:** {popup_periods[0]} ~ {popup_periods[-1]} ({len(popup_periods)}개월)")
+            c1,c2,c3 = st.columns(3)
+            kpi_card(c1, "팝업 총 매출", f"{popup_df['판매금액'].sum()/10000:,.0f}만", color="#8E24AA")
+            kpi_card(c2, "팝업 총 수량", f"{int(popup_df['수량'].sum()):,}개", color="#8E24AA")
+            kpi_card(c3, "팝업 SKU 수", f"{popup_df['스타일코드'].nunique()}개", color="#8E24AA")
+            popup_style = popup_df.groupby(['스타일코드','대표명','카테고리']).agg(
+                팝업매출=('판매금액','sum'), 팝업수량=('수량','sum')).reset_index()
+            popup_style = popup_style.sort_values('팝업매출', ascending=False).reset_index(drop=True)
+            popup_style['팝업매출_만'] = (popup_style['팝업매출']/10000).round(1)
+            online_style = online_df.groupby('스타일코드').agg(
+                온라인매출=('판매금액','sum'), 온라인수량=('수량','sum')).reset_index()
+            compare = popup_style.merge(online_style, on='스타일코드', how='left')
+            compare['온라인매출_만'] = (compare['온라인매출'].fillna(0)/10000).round(1)
+            compare['온라인비율'] = (compare['팝업매출']/(compare['팝업매출']+compare['온라인매출'].fillna(0))*100).round(1)
+            col_a,col_b = st.columns([3,2])
+            with col_a:
+                top10 = compare.head(10)
+                fig = go.Figure()
+                fig.add_bar(name='팝업 매출', x=top10['대표명'].apply(lambda x: x[:15]+'...' if len(x)>15 else x),
+                            y=top10['팝업매출_만'], marker_color='#8E24AA')
+                fig.add_bar(name='온라인 매출', x=top10['대표명'].apply(lambda x: x[:15]+'...' if len(x)>15 else x),
+                            y=top10['온라인매출_만'], marker_color='#CE93D8')
+                fig.update_layout(barmode='group', title='팝업 vs 온라인 (TOP10)',
+                                  height=380, plot_bgcolor='white', legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-30))
+                st.plotly_chart(fig, use_container_width=True)
+            with col_b:
+                st.markdown("#### 팝업 전용 상품")
+                popup_only = compare[compare['온라인매출'].isna() | (compare['온라인매출']==0)]
+                if not popup_only.empty:
+                    for _, r in popup_only.head(8).iterrows():
+                        st.markdown(f'<div class="warn-card"><b>{r["대표명"]}</b><br>{r["카테고리"]} | {r["팝업매출_만"]}만 | {int(r["팝업수량"])}개</div>', unsafe_allow_html=True)
+                else:
+                    st.info("팝업 전용 상품 없음")
+            # 헤일로 vs 카니발리제이션
+            popup_month_rev = online_df[online_df['년월'].isin(popup_periods)].groupby('년월')['판매금액'].sum()
+            all_monthly_online = online_df.groupby('년월')['판매금액'].sum().sort_index()
+            halo_fig = go.Figure()
+            halo_fig.add_scatter(x=all_monthly_online.index, y=(all_monthly_online/10000).round(),
+                                 name='온라인 전체', mode='lines+markers', line=dict(color='#1E88E5',width=2))
+            if not popup_month_rev.empty:
+                halo_fig.add_scatter(x=popup_month_rev.index, y=(popup_month_rev/10000).round(),
+                                     name='팝업 운영월', mode='markers',
+                                     marker=dict(color='#8E24AA',size=12,symbol='star'))
+            halo_fig.update_layout(title='온라인 매출 + 팝업 운영월', height=280, plot_bgcolor='white',
+                                   legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45))
+            st.plotly_chart(halo_fig, use_container_width=True)
+            with st.expander("📋 팝업 전체 목록"):
+                disp = compare[['대표명','카테고리','팝업매출_만','팝업수량','온라인매출_만','온라인비율']].copy()
+                disp['온라인비율'] = disp['온라인비율'].apply(lambda x: f"{x}%")
+                disp.columns = ['상품명','카테고리','팝업매출(만)','팝업수량','온라인매출(만)','팝업비율(%)']
+                st.dataframe(disp, use_container_width=True, hide_index=True)
 
-        # ── 전체 KPI ─────────────────────────────────────────────────────────
-        total_adspend = (meta_ms['지출 금액 (KRW)'].sum() + meta_js['지출 금액 (KRW)'].sum() +
-                         prod_ms['집행 광고비'].sum() + prod_29['집행 광고비'].sum())
-        total_conv    = (meta_ms['공유 항목의 구매 전환값'].sum() + meta_js['구매 전환값'].sum() +
-                         prod_ms['매출'].sum() + prod_29['매출'].sum())
-        total_roas    = total_conv / total_adspend if total_adspend > 0 else 0
-        total_purchase = meta_ms['공유 항목이 포함된 구매'].sum() + meta_js['구매'].sum()
+    # ── 마케팅 효율 ───────────────────────────────────────────────────────────
+    with pm_sub[1]:
+        mktg = load_marketing(str(MKTG_FILE))
+        if mktg is None:
+            st.warning(f"마케팅 파일을 찾을 수 없습니다: {MKTG_FILE}")
+        else:
+            meta_ms = mktg['meta_ms']; meta_js = mktg['meta_js']
+            prod_ms = mktg['prod_ms']; prod_29 = mktg['prod_29']
+            total_adspend = (meta_ms['지출 금액 (KRW)'].sum() + meta_js['지출 금액 (KRW)'].sum() +
+                             prod_ms['집행 광고비'].sum() + prod_29['집행 광고비'].sum())
+            total_conv = (meta_ms['공유 항목의 구매 전환값'].sum() + meta_js['구매 전환값'].sum() +
+                          prod_ms['매출'].sum() + prod_29['매출'].sum())
+            total_roas = total_conv / total_adspend if total_adspend > 0 else 0
+            total_purchase = meta_ms['공유 항목이 포함된 구매'].sum() + meta_js['구매'].sum()
+            c1,c2,c3,c4 = st.columns(4)
+            kpi_card(c1, "총 광고비", f"{total_adspend/10000:,.0f}만원", color="#E53935")
+            kpi_card(c2, "총 구매전환값", f"{total_conv/10000:,.0f}만원", color="#1E88E5")
+            kpi_card(c3, "전체 ROAS", f"{total_roas:.1f}x", color="#43A047")
+            kpi_card(c4, "총 구매 건수", f"{int(total_purchase):,}건", color="#FB8C00")
+            st.markdown("---")
 
-        c1,c2,c3,c4 = st.columns(4)
-        kpi_card(c1, "총 광고비", f"{total_adspend/10000:,.0f}만원", color="#E53935")
-        kpi_card(c2, "총 구매전환값", f"{total_conv/10000:,.0f}만원", color="#1E88E5")
-        kpi_card(c3, "전체 ROAS", f"{total_roas:.1f}x", color="#43A047")
-        kpi_card(c4, "총 구매 건수", f"{int(total_purchase):,}건", color="#FB8C00")
-
-        st.markdown("---")
-        mkt_sub = st.tabs(["📊 채널별 ROAS", "📈 일별 추이", "🎯 광고 형식별", "🛍️ 상품광고"])
-
-        # ── 채널별 ROAS ───────────────────────────────────────────────────────
-        with mkt_sub[0]:
-            # 월별 집계
-            ms_m = meta_ms.groupby('년월').agg(
-                광고비=('지출 금액 (KRW)','sum'), 클릭=('링크 클릭','sum'),
-                노출=('노출','sum'), 구매전환값=('공유 항목의 구매 전환값','sum'),
-                구매=('공유 항목이 포함된 구매','sum')).reset_index()
-            ms_m['ROAS'] = (ms_m['구매전환값']/ms_m['광고비']).replace([np.inf,-np.inf],0).round(2)
-            ms_m['CTR'] = (ms_m['클릭']/ms_m['노출']*100).round(3)
-            ms_m['CPC'] = (ms_m['광고비']/ms_m['클릭'].replace(0,np.nan)).round(0)
-            ms_m['채널'] = '무신사 메타'
-
-            js_m = meta_js.groupby('년월').agg(
-                광고비=('지출 금액 (KRW)','sum'), 클릭=('링크 클릭','sum'),
-                노출=('노출','sum'), 구매전환값=('구매 전환값','sum'),
-                구매=('구매','sum')).reset_index()
-            js_m['ROAS'] = (js_m['구매전환값']/js_m['광고비']).replace([np.inf,-np.inf],0).round(2)
-            js_m['CTR'] = (js_m['클릭']/js_m['노출']*100).round(3)
-            js_m['CPC'] = (js_m['광고비']/js_m['클릭'].replace(0,np.nan)).round(0)
-            js_m['채널'] = '자사몰 메타'
-
-            pm_m = prod_ms.groupby('년월').agg(
-                광고비=('집행 광고비','sum'), 구매전환값=('매출','sum'),
-                클릭=('클릭 수','sum'), 노출=('노출 수','sum')).reset_index()
-            pm_m['ROAS'] = (pm_m['구매전환값']/pm_m['광고비']).replace([np.inf,-np.inf],0).round(2)
-            pm_m['CTR'] = (pm_m['클릭']/pm_m['노출']*100).round(3)
-            pm_m['CPC'] = (pm_m['광고비']/pm_m['클릭'].replace(0,np.nan)).round(0)
-            pm_m['채널'] = '무신사 상품광고'; pm_m['구매'] = 0
-
-            p29_m = prod_29.groupby('년월').agg(
-                광고비=('집행 광고비','sum'), 구매전환값=('매출','sum'),
-                클릭=('클릭 수','sum'), 노출=('노출 수','sum')).reset_index()
-            p29_m['ROAS'] = (p29_m['구매전환값']/p29_m['광고비']).replace([np.inf,-np.inf],0).round(2)
-            p29_m['CTR'] = (p29_m['클릭']/p29_m['노출']*100).round(3)
-            p29_m['CPC'] = (p29_m['광고비']/p29_m['클릭'].replace(0,np.nan)).round(0)
-            p29_m['채널'] = '29CM 상품광고'; p29_m['구매'] = 0
-
-            all_ch = pd.concat([ms_m, js_m, pm_m, p29_m], ignore_index=True)
-
+            # 채널별 월별 집계
             MKTG_COLORS = {'무신사 메타':'#1E88E5','자사몰 메타':'#43A047',
                            '무신사 상품광고':'#FB8C00','29CM 상품광고':'#E53935'}
+            def make_ch_monthly(d, adcol, convcol, clickcol, impcol, chname):
+                m = d.groupby('년월').agg(광고비=(adcol,'sum'), 구매전환값=(convcol,'sum'),
+                                          클릭=(clickcol,'sum'), 노출=(impcol,'sum')).reset_index()
+                m['ROAS'] = (m['구매전환값']/m['광고비'].replace(0,np.nan)).fillna(0).round(2)
+                m['CTR'] = (m['클릭']/m['노출'].replace(0,np.nan)*100).fillna(0).round(3)
+                m['CPC'] = (m['광고비']/m['클릭'].replace(0,np.nan)).fillna(0).round(0)
+                m['채널'] = chname
+                return m
+            ms_m = make_ch_monthly(meta_ms,'지출 금액 (KRW)','공유 항목의 구매 전환값','링크 클릭','노출','무신사 메타')
+            js_m = make_ch_monthly(meta_js,'지출 금액 (KRW)','구매 전환값','링크 클릭','노출','자사몰 메타')
+            pm_m = make_ch_monthly(prod_ms,'집행 광고비','매출','클릭 수','노출 수','무신사 상품광고')
+            p29_m = make_ch_monthly(prod_29,'집행 광고비','매출','클릭 수','노출 수','29CM 상품광고')
+            all_ch = pd.concat([ms_m, js_m, pm_m, p29_m], ignore_index=True)
 
             col_a, col_b = st.columns(2)
             with col_a:
                 fig = px.line(all_ch, x='년월', y='ROAS', color='채널', markers=True,
                               title='채널별 월별 ROAS', color_discrete_map=MKTG_COLORS)
-                fig.add_hline(y=3, line_dash='dash', line_color='gray', annotation_text='ROAS 3x 기준선')
-                fig.update_layout(height=320, plot_bgcolor='white',
-                                  legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-30))
+                fig.add_hline(y=3, line_dash='dash', line_color='gray', annotation_text='ROAS 3x')
+                fig.update_layout(height=300, plot_bgcolor='white', legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-30))
                 st.plotly_chart(fig, use_container_width=True)
             with col_b:
                 fig2 = px.bar(all_ch, x='년월', y='광고비', color='채널', barmode='stack',
                               title='채널별 월별 광고비', color_discrete_map=MKTG_COLORS)
-                fig2.update_layout(height=320, plot_bgcolor='white',
-                                   legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-30))
+                fig2.update_layout(height=300, plot_bgcolor='white', legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-30))
                 st.plotly_chart(fig2, use_container_width=True)
 
-            # 채널 종합 비교표
             summary_rows = []
             for d, ch in [(ms_m,'무신사 메타'),(js_m,'자사몰 메타'),(pm_m,'무신사 상품광고'),(p29_m,'29CM 상품광고')]:
-                summary_rows.append({
-                    '채널': ch,
-                    '총 광고비': f"{d['광고비'].sum()/10000:,.0f}만",
-                    '총 구매전환값': f"{d['구매전환값'].sum()/10000:,.0f}만",
-                    '평균 ROAS': f"{(d['구매전환값'].sum()/d['광고비'].sum()):.1f}x" if d['광고비'].sum()>0 else "-",
-                    '평균 CTR': f"{d['CTR'].mean():.3f}%",
-                    '평균 CPC': f"{d['CPC'].mean():,.0f}원"
-                })
+                summary_rows.append({'채널':ch,
+                    '총 광고비':f"{d['광고비'].sum()/10000:,.0f}만",
+                    '총 전환값':f"{d['구매전환값'].sum()/10000:,.0f}만",
+                    '평균 ROAS':f"{(d['구매전환값'].sum()/d['광고비'].sum()):.1f}x" if d['광고비'].sum()>0 else "-",
+                    '평균 CTR':f"{d['CTR'].mean():.3f}%",
+                    '평균 CPC':f"{d['CPC'].mean():,.0f}원"})
             st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
 
-        # ── 일별 추이 ─────────────────────────────────────────────────────────
-        with mkt_sub[1]:
-            st.markdown("#### 무신사 메타 광고 일별 추이")
-            ms_daily = meta_ms.groupby('날짜').agg(
-                광고비=('지출 금액 (KRW)','sum'),
-                구매전환값=('공유 항목의 구매 전환값','sum'),
-                클릭=('링크 클릭','sum'),
-                노출=('노출','sum'),
-                구매=('공유 항목이 포함된 구매','sum')).reset_index()
-            ms_daily['ROAS'] = (ms_daily['구매전환값']/ms_daily['광고비'].replace(0,np.nan)).fillna(0).round(2)
-            ms_daily['CTR'] = (ms_daily['클릭']/ms_daily['노출'].replace(0,np.nan)*100).fillna(0).round(3)
+    # ── 이번주 인사이트 ───────────────────────────────────────────────────────
+    with pm_sub[2]:
+        st.markdown("### 💡 이번주 채널별 마케팅 인사이트")
+        mktg2 = load_marketing(str(MKTG_FILE))
+        if mktg2 is None:
+            st.warning("마케팅 파일이 없습니다.")
+        else:
+            meta_ms2 = mktg2['meta_ms']; meta_js2 = mktg2['meta_js']
+            prod_ms2 = mktg2['prod_ms']; prod_29_2 = mktg2['prod_29']
 
-            fig = go.Figure()
-            fig.add_bar(x=ms_daily['날짜'], y=ms_daily['광고비']/10000, name='광고비(만)', marker_color='#BBDEFB', opacity=0.8)
-            fig.add_scatter(x=ms_daily['날짜'], y=ms_daily['구매전환값']/10000, name='전환값(만)',
-                            yaxis='y', line=dict(color='#1E88E5',width=2), mode='lines')
-            fig.add_scatter(x=ms_daily['날짜'], y=ms_daily['ROAS'], name='ROAS',
-                            yaxis='y2', line=dict(color='#E53935',width=2,dash='dot'), mode='lines+markers')
-            fig.update_layout(title='광고비 vs 전환값 vs ROAS', height=340,
-                              yaxis=dict(title='금액(만원)'),
-                              yaxis2=dict(title='ROAS',overlaying='y',side='right'),
-                              plot_bgcolor='white', legend=dict(orientation='h',y=1.1))
-            st.plotly_chart(fig, use_container_width=True)
+            # 이번주/전주 광고 데이터
+            last_w2 = sorted(meta_ms2['주차'].unique())[-1] if '주차' in meta_ms2.columns and len(meta_ms2) > 0 else None
 
-            col_a, col_b = st.columns(2)
-            with col_a:
-                fig2 = go.Figure()
-                fig2.add_scatter(x=ms_daily['날짜'], y=ms_daily['CTR'], name='CTR(%)',
-                                 line=dict(color='#43A047',width=2), mode='lines')
-                fig2.update_layout(title='CTR 일별 추이', height=240, plot_bgcolor='white',
-                                   yaxis_title='CTR(%)')
-                st.plotly_chart(fig2, use_container_width=True)
-            with col_b:
-                fig3 = go.Figure()
-                fig3.add_bar(x=ms_daily['날짜'], y=ms_daily['구매'], name='구매건수',
-                             marker_color='#FB8C00')
-                fig3.update_layout(title='일별 구매 건수', height=240, plot_bgcolor='white',
-                                   yaxis_title='건수')
-                st.plotly_chart(fig3, use_container_width=True)
+            def get_week_summary(d, adcol, convcol, clickcol):
+                if '주차' not in d.columns or last_w2 is None: return None, None
+                weeks = sorted(d['주차'].unique())
+                if len(weeks) < 1: return None, None
+                last_w_data = d[d['주차'] == weeks[-1]]
+                prev_w_data = d[d['주차'] == weeks[-2]] if len(weeks) >= 2 else pd.DataFrame()
+                this_spend = last_w_data[adcol].sum()
+                this_conv = last_w_data[convcol].sum()
+                this_roas = this_conv / this_spend if this_spend > 0 else 0
+                prev_spend = prev_w_data[adcol].sum() if not prev_w_data.empty else 0
+                prev_conv = prev_w_data[convcol].sum() if not prev_w_data.empty else 0
+                prev_roas = prev_conv / prev_spend if prev_spend > 0 else 0
+                return {'광고비':this_spend, '전환값':this_conv, 'ROAS':this_roas,
+                        '전주광고비':prev_spend, '전주전환값':prev_conv, '전주ROAS':prev_roas}, None
 
-        # ── 광고 형식별 ───────────────────────────────────────────────────────
-        with mkt_sub[2]:
-            st.markdown("#### 광고 형식 / 소재별 효율")
-            form_df = meta_ms.groupby('광고 형식').agg(
-                광고비=('지출 금액 (KRW)','sum'),
-                클릭=('링크 클릭','sum'),
-                노출=('노출','sum'),
-                구매전환값=('공유 항목의 구매 전환값','sum'),
-                구매=('공유 항목이 포함된 구매','sum')).reset_index()
-            form_df['ROAS'] = (form_df['구매전환값']/form_df['광고비'].replace(0,np.nan)).fillna(0).round(2)
-            form_df['CTR'] = (form_df['클릭']/form_df['노출']*100).round(3)
-            form_df['CPC'] = (form_df['광고비']/form_df['클릭'].replace(0,np.nan)).round(0)
-            form_df['광고비_만'] = (form_df['광고비']/10000).round(1)
-            form_df['전환값_만'] = (form_df['구매전환값']/10000).round(1)
+            ch_insights = {
+                '무신사 메타': get_week_summary(meta_ms2,'지출 금액 (KRW)','공유 항목의 구매 전환값','링크 클릭')[0],
+                '자사몰 메타': get_week_summary(meta_js2,'지출 금액 (KRW)','구매 전환값','링크 클릭')[0],
+                '무신사 상품광고': get_week_summary(prod_ms2,'집행 광고비','매출','클릭 수')[0],
+                '29CM 상품광고': get_week_summary(prod_29_2,'집행 광고비','매출','클릭 수')[0],
+            }
 
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                fig = px.bar(form_df, x='광고 형식', y='ROAS', color='광고 형식',
-                             title='형식별 ROAS', text='ROAS',
-                             color_discrete_sequence=['#1E88E5','#43A047','#FB8C00'])
-                fig.update_traces(textposition='outside')
-                fig.update_layout(height=300, plot_bgcolor='white', showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
-            with col_b:
-                fig2 = px.bar(form_df, x='광고 형식', y='CTR', color='광고 형식',
-                              title='형식별 CTR(%)', text=form_df['CTR'].apply(lambda x: f"{x:.3f}%"),
-                              color_discrete_sequence=['#1E88E5','#43A047','#FB8C00'])
-                fig2.update_traces(textposition='outside')
-                fig2.update_layout(height=300, plot_bgcolor='white', showlegend=False)
-                st.plotly_chart(fig2, use_container_width=True)
-            with col_c:
-                fig3 = px.bar(form_df, x='광고 형식', y='CPC', color='광고 형식',
-                              title='형식별 CPC(원)', text=form_df['CPC'].apply(lambda x: f"{x:,.0f}원"),
-                              color_discrete_sequence=['#1E88E5','#43A047','#FB8C00'])
-                fig3.update_traces(textposition='outside')
-                fig3.update_layout(height=300, plot_bgcolor='white', showlegend=False)
-                st.plotly_chart(fig3, use_container_width=True)
+            # 채널별 카드
+            col1, col2 = st.columns(2)
+            insight_texts = []
+            for idx, (ch_name, data) in enumerate(ch_insights.items()):
+                col = col1 if idx % 2 == 0 else col2
+                with col:
+                    if data:
+                        roas_chg = data['ROAS'] - data['전주ROAS']
+                        spend_chg = (data['광고비'] - data['전주광고비']) / data['전주광고비'] * 100 if data['전주광고비'] > 0 else 0
+                        roas_color = "#43A047" if data['ROAS'] >= 3 else ("#FB8C00" if data['ROAS'] >= 1.5 else "#E53935")
+                        roas_arrow = "▲" if roas_chg > 0 else "▼"
+                        roas_cls = "up" if roas_chg > 0 else "dn"
+                        st.markdown(
+                            f'<div class="metric-card" style="border-left-color:{roas_color}">'
+                            f'<div class="metric-label">{ch_name}</div>'
+                            f'<div class="metric-value">ROAS {data["ROAS"]:.1f}x '
+                            f'<span class="{roas_cls}" style="font-size:14px">{roas_arrow}{abs(roas_chg):.1f}</span></div>'
+                            f'<div style="font-size:12px;color:#666;margin-top:4px">'
+                            f'광고비 {data["광고비"]/10000:.1f}만 | 전환값 {data["전환값"]/10000:.1f}만 | '
+                            f'전주대비 광고비 {spend_chg:+.0f}%</div></div>',
+                            unsafe_allow_html=True)
+                        # 인사이트 자동 생성
+                        if data['ROAS'] >= 4:
+                            insight_texts.append(f"✅ **{ch_name}**: ROAS {data['ROAS']:.1f}x — 고효율 채널. 예산 증액 검토 필요.")
+                        elif data['ROAS'] >= 2:
+                            insight_texts.append(f"🟡 **{ch_name}**: ROAS {data['ROAS']:.1f}x — 준수한 성과. 크리에이티브 A/B테스트로 개선 여지 있음.")
+                        else:
+                            insight_texts.append(f"🔴 **{ch_name}**: ROAS {data['ROAS']:.1f}x — 효율 낮음. 예산 축소 또는 소재 교체 필요.")
+                        if roas_chg > 0.5:
+                            insight_texts.append(f"   → 전주 대비 ROAS +{roas_chg:.1f} 상승 — 현재 캠페인 유지 권장.")
+                        elif roas_chg < -0.5:
+                            insight_texts.append(f"   → 전주 대비 ROAS {roas_chg:.1f} 하락 — 소재 피로도 확인 필요.")
 
-            # 월별 형식별 ROAS 추이
-            form_monthly = meta_ms.groupby(['년월','광고 형식']).agg(
-                광고비=('지출 금액 (KRW)','sum'),
-                구매전환값=('공유 항목의 구매 전환값','sum')).reset_index()
-            form_monthly['ROAS'] = (form_monthly['구매전환값']/form_monthly['광고비'].replace(0,np.nan)).fillna(0).round(2)
-            fig4 = px.line(form_monthly, x='년월', y='ROAS', color='광고 형식', markers=True,
-                           title='월별 광고 형식별 ROAS 추이')
-            fig4.update_layout(height=280, plot_bgcolor='white', legend=dict(orientation='h',y=1.1))
-            st.plotly_chart(fig4, use_container_width=True)
+            st.markdown("---")
+            st.markdown("### 📋 인사이트 요약")
+            if insight_texts:
+                for txt in insight_texts:
+                    st.markdown(f'<div class="insight-card">{txt}</div>', unsafe_allow_html=True)
 
-            # 상세 테이블
-            disp_form = form_df[['광고 형식','광고비_만','전환값_만','ROAS','CTR','CPC','구매']].copy()
-            disp_form.columns = ['광고 형식','광고비(만)','전환값(만)','ROAS','CTR(%)','CPC(원)','구매건수']
-            st.dataframe(disp_form, use_container_width=True, hide_index=True)
+            st.markdown("---")
+            st.markdown("### 🧭 추후 방향성 제안")
 
-        # ── 상품광고 ─────────────────────────────────────────────────────────
-        with mkt_sub[3]:
-            st.markdown("#### 상품광고 — 무신사 vs 29CM")
+            # 채널별 ROAS 순위로 방향성 자동 도출
+            valid = {k:v for k,v in ch_insights.items() if v and v['광고비'] > 0}
+            if valid:
+                sorted_ch = sorted(valid.items(), key=lambda x: x[1]['ROAS'], reverse=True)
+                best_ch = sorted_ch[0][0]
+                worst_ch = sorted_ch[-1][0]
+                best_roas = sorted_ch[0][1]['ROAS']
+                worst_roas = sorted_ch[-1][1]['ROAS']
+                total_spend = sum(v['광고비'] for v in valid.values())
+                total_conv2 = sum(v['전환값'] for v in valid.values())
+                overall_roas = total_conv2 / total_spend if total_spend > 0 else 0
 
-            ms_m2 = prod_ms.groupby('년월').agg(
-                광고비=('집행 광고비','sum'), 매출=('매출','sum'),
-                클릭=('클릭 수','sum'), 노출=('노출 수','sum')).reset_index()
-            ms_m2['ROAS'] = (ms_m2['매출']/ms_m2['광고비'].replace(0,np.nan)).fillna(0).round(2)
-            ms_m2['CTR'] = (ms_m2['클릭']/ms_m2['노출'].replace(0,np.nan)*100).fillna(0).round(3)
-            ms_m2['채널'] = '무신사'
+                directions = [
+                    f"**1. 예산 집중:** {best_ch} (ROAS {best_roas:.1f}x)이 가장 효율적입니다. 이번주 예산의 40~50%를 이 채널에 집중하세요.",
+                    f"**2. 효율 개선 or 축소:** {worst_ch} (ROAS {worst_roas:.1f}x)는 효율이 가장 낮습니다. 소재를 교체하거나 예산을 줄이고 상위 채널로 이전하세요.",
+                    f"**3. 전체 ROAS:** 이번주 통합 ROAS는 **{overall_roas:.1f}x**입니다. " +
+                    ("목표치(3x) 달성 — 현재 운영 방향 유지하되 스케일업 시점입니다." if overall_roas >= 3
+                     else "목표치(3x) 미달 — 채널 믹스 재조정이 필요합니다."),
+                    "**4. 시즌 대응:** 현재 SS 시즌 후반 — 무신사 기획전 및 시즌오프 할인과 광고를 연계하면 ROAS 상승 가능성이 높습니다.",
+                    "**5. 26FW 준비:** 8월부터 FW 신상품 티저 광고를 준비하세요. 특히 후리스/스웻팬츠 카테고리 타겟팅을 선점하면 유리합니다.",
+                ]
+                for d in directions:
+                    st.markdown(f'<div class="insight-card" style="margin-bottom:6px">{d}</div>', unsafe_allow_html=True)
+            else:
+                st.info("이번주 광고 데이터가 없습니다.")
 
-            p29_m2 = prod_29.groupby('년월').agg(
-                광고비=('집행 광고비','sum'), 매출=('매출','sum'),
-                클릭=('클릭 수','sum'), 노출=('노출 수','sum')).reset_index()
-            p29_m2['ROAS'] = (p29_m2['매출']/p29_m2['광고비'].replace(0,np.nan)).fillna(0).round(2)
-            p29_m2['CTR'] = (p29_m2['클릭']/p29_m2['노출'].replace(0,np.nan)*100).fillna(0).round(3)
-            p29_m2['채널'] = '29CM'
-
-            prod_all = pd.concat([ms_m2, p29_m2], ignore_index=True)
-
-            col_a, col_b = st.columns(2)
-            with col_a:
-                fig = px.bar(prod_all, x='년월', y='ROAS', color='채널', barmode='group',
-                             title='상품광고 ROAS 비교',
-                             color_discrete_map={'무신사':'#1E88E5','29CM':'#E53935'})
-                fig.add_hline(y=3, line_dash='dash', line_color='gray')
-                fig.update_layout(height=300, plot_bgcolor='white',
-                                  legend=dict(orientation='h',y=1.1))
-                st.plotly_chart(fig, use_container_width=True)
-            with col_b:
-                fig2 = go.Figure()
-                fig2.add_scatter(x=ms_m2['년월'], y=ms_m2['CTR'], name='무신사 CTR(%)',
-                                 mode='lines+markers', line=dict(color='#1E88E5',width=2))
-                fig2.add_scatter(x=p29_m2['년월'], y=p29_m2['CTR'], name='29CM CTR(%)',
-                                 mode='lines+markers', line=dict(color='#E53935',width=2))
-                fig2.update_layout(title='상품광고 CTR 비교', height=300, plot_bgcolor='white',
-                                   legend=dict(orientation='h',y=1.1))
-                st.plotly_chart(fig2, use_container_width=True)
-
-            # 광고비 vs 매출 효율
-            fig3 = go.Figure()
-            fig3.add_bar(x=ms_m2['년월'], y=ms_m2['광고비']/10000, name='무신사 광고비(만)', marker_color='#BBDEFB')
-            fig3.add_bar(x=p29_m2['년월'], y=p29_m2['광고비']/10000, name='29CM 광고비(만)', marker_color='#FFCDD2')
-            fig3.add_scatter(x=ms_m2['년월'], y=ms_m2['매출']/10000, name='무신사 매출(만)',
-                             mode='lines+markers', line=dict(color='#1E88E5',width=2))
-            fig3.add_scatter(x=p29_m2['년월'], y=p29_m2['매출']/10000, name='29CM 매출(만)',
-                             mode='lines+markers', line=dict(color='#E53935',width=2))
-            fig3.update_layout(title='광고비 vs 광고 기여 매출', barmode='group',
-                               height=300, plot_bgcolor='white',
-                               legend=dict(orientation='h',y=1.1), yaxis_title='만원')
-            st.plotly_chart(fig3, use_container_width=True)
-
-            # 요약 테이블
-            for d, nm in [(ms_m2,'무신사'),(p29_m2,'29CM')]:
-                st.markdown(f"**{nm} 상품광고 월별**")
-                disp = d[['년월','광고비','매출','ROAS','CTR']].copy()
-                disp['광고비'] = disp['광고비'].apply(lambda x: f"{x/10000:,.1f}만")
-                disp['매출'] = disp['매출'].apply(lambda x: f"{x/10000:,.1f}만")
-                disp['ROAS'] = disp['ROAS'].apply(lambda x: f"{x:.1f}x")
-                disp['CTR'] = disp['CTR'].apply(lambda x: f"{x:.3f}%")
-                st.dataframe(disp, use_container_width=True, hide_index=True)
-
-with tab12:
+# ════════════════════════════════════════════════════════════════════════════
+# TAB 7 — 관리
+# ════════════════════════════════════════════════════════════════════════════
+with tab7:
     st.markdown("### ⚙️ 관리")
     mgmt = load_mgmt()
     sub1,sub2,sub3 = st.tabs(["🎯 월별 목표","📦 상품 메모","✅ TODO"])
 
     with sub1:
         st.markdown("**월별 매출 목표 설정 (만원)**")
-        targets = mgmt.get("targets",{})
+        targets2 = mgmt.get("targets",{})
         cols = st.columns(3)
         new_targets = {}
         for i,ym in enumerate(months_all):
             with cols[i%3]:
                 actual = df_all[df_all['년월']==ym]['판매금액'].sum()/10000
-                val = st.number_input(f"{ym}", value=int(targets.get(ym, round(actual*1.1))), step=100, key=f"t_{ym}")
+                val = st.number_input(f"{ym}", value=int(targets2.get(ym, round(actual*1.1))), step=100, key=f"t_{ym}")
                 new_targets[ym] = val
                 ach = actual/val*100 if val>0 else 0
                 color = "green" if ach>=100 else ("orange" if ach>=80 else "red")
