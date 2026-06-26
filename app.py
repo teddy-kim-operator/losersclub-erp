@@ -151,6 +151,24 @@ def load_mgmt():
 def save_mgmt(data):
     with open(MGMT_FILE, 'w', encoding='utf-8') as f: json.dump(data, f, ensure_ascii=False, indent=2)
 
+def load_goals():
+    return load_mgmt().get("targets", {})
+
+def save_goals(goals):
+    d = load_mgmt(); d["targets"] = goals; save_mgmt(d)
+
+def load_memos():
+    return load_mgmt().get("memos", {})
+
+def save_memos(memos):
+    d = load_mgmt(); d["memos"] = memos; save_mgmt(d)
+
+def load_todos():
+    return load_mgmt().get("todos", [])
+
+def save_todos(todos):
+    d = load_mgmt(); d["todos"] = todos; save_mgmt(d)
+
 def kpi_card(col, label, value, delta=None, color="#1E88E5"):
     with col:
         delta_html = ""
@@ -1462,10 +1480,10 @@ with tab9:
                 df_new = pd.read_excel(uploaded)
                 st.write(f"업로드된 행 수: {len(df_new):,}")
                 st.dataframe(df_new.head(), use_container_width=True)
-                if st.button("✅ 병합 & 저장", key="merge_btn"):
+                if st.button("병합 & 저장", key="merge_btn"):
                     df_merged = pd.concat([df_all, df_new], ignore_index=True)
                     df_merged.drop_duplicates(inplace=True)
-                    df_merged.to_excel(DATA_PATH, index=False)
+                    df_merged.to_excel(filepath, index=False)
                     st.success(f"병합 완료! 총 {len(df_merged):,}행 저장됨.")
                     st.rerun()
             except Exception as e:
