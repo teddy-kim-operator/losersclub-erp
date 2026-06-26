@@ -1453,17 +1453,23 @@ with tab9:
             save_todos(todo_data)
             st.rerun()
 
+        # 기존 데이터 형식 정규화 (str → dict)
+        todo_data = [
+            item if isinstance(item, dict) else {"text": str(item), "done": False}
+            for item in todo_data
+        ]
+
         for i, item in enumerate(todo_data):
             col_chk, col_txt, col_del = st.columns([0.1, 0.8, 0.1])
             with col_chk:
-                done = st.checkbox("", value=item["done"], key=f"todo_{i}")
-                if done != item["done"]:
+                done = st.checkbox("", value=item.get("done", False), key=f"todo_{i}")
+                if done != item.get("done", False):
                     todo_data[i]["done"] = done
                     save_todos(todo_data)
                     st.rerun()
             with col_txt:
-                style = "text-decoration:line-through;color:#aaa;" if item["done"] else ""
-                st.markdown(f'<span style="{style}">{item["text"]}</span>', unsafe_allow_html=True)
+                style = "text-decoration:line-through;color:#aaa;" if item.get("done") else ""
+                st.markdown(f'<span style="{style}">{item.get("text","")}</span>', unsafe_allow_html=True)
             with col_del:
                 if st.button("🗑", key=f"del_todo_{i}"):
                     todo_data.pop(i)
