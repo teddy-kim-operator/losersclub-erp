@@ -42,16 +42,50 @@ CAT_MAP = {'PT':'팬츠','TS':'반팔티','BG':'가방','HZ':'후리스집업','
 
 st.markdown("""
 <style>
-.metric-card{background:#f8f9fa;border-radius:12px;padding:16px 20px;border-left:4px solid #1E88E5;margin-bottom:8px;}
-.metric-label{font-size:12px;color:#666;font-weight:500;}
-.metric-value{font-size:26px;font-weight:700;color:#1a1a1a;line-height:1.2;}
-.metric-delta{font-size:13px;margin-top:2px;}
-.up{color:#43A047;}.dn{color:#E53935;}
-.warn-card{background:#FFF3E0;border-radius:8px;padding:10px 14px;border-left:4px solid #FB8C00;margin:4px 0;}
-.danger-card{background:#FFEBEE;border-radius:8px;padding:10px 14px;border-left:4px solid #E53935;margin:4px 0;}
-.good-card{background:#E8F5E9;border-radius:8px;padding:10px 14px;border-left:4px solid #43A047;margin:4px 0;}
-.insight-card{background:#E3F2FD;border-radius:8px;padding:12px 16px;border-left:4px solid #1E88E5;margin:6px 0;}
-.rank-row{padding:6px 0;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px;}
+/* ── 전체 여백 축소 ── */
+.block-container{padding-top:1rem!important;padding-bottom:1rem!important;}
+section[data-testid="stSidebar"] .block-container{padding-top:1rem!important;}
+
+/* ── KPI 카드 ── */
+.kpi{background:#fff;border-radius:10px;padding:12px 16px;border:1px solid #e8e8e8;
+     border-top:3px solid #1E88E5;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:6px;}
+.kpi-label{font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.kpi-value{font-size:22px;font-weight:800;color:#111;line-height:1.1;}
+.kpi-delta{font-size:12px;margin-top:3px;font-weight:600;}
+.up{color:#2e7d32;}.dn{color:#c62828;}
+
+/* ── 랭킹 행 ── */
+.rk{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+    margin-bottom:3px;background:#fafafa;border:1px solid #f0f0f0;transition:background .15s;}
+.rk:hover{background:#f0f4ff;}
+.rk-medal{font-size:15px;width:28px;text-align:center;flex-shrink:0;}
+.rk-name{flex:1;font-size:13px;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rk-val{font-size:13px;font-weight:700;color:#1E88E5;white-space:nowrap;}
+.rk-delta{font-size:11px;font-weight:700;white-space:nowrap;min-width:44px;text-align:right;}
+
+/* ── 채널 행 ── */
+.ch-row{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;
+        margin-bottom:4px;background:#fff;border:1px solid #eee;}
+.ch-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.ch-name{flex:1;font-size:13px;color:#444;}
+.ch-val{font-size:14px;font-weight:700;color:#111;}
+
+/* ── 정보 카드 ── */
+.warn-card{background:#fff8f0;border-radius:8px;padding:9px 13px;border-left:3px solid #FB8C00;margin:3px 0;font-size:13px;}
+.danger-card{background:#fff5f5;border-radius:8px;padding:9px 13px;border-left:3px solid #E53935;margin:3px 0;font-size:13px;}
+.good-card{background:#f1f8f1;border-radius:8px;padding:9px 13px;border-left:3px solid #43A047;margin:3px 0;font-size:13px;}
+.insight-card{background:#f0f6ff;border-radius:8px;padding:10px 14px;border-left:3px solid #1E88E5;margin:4px 0;font-size:13px;}
+
+/* ── 섹션 제목 ── */
+.sec-title{font-size:14px;font-weight:700;color:#444;margin:0 0 8px 0;padding-bottom:5px;
+           border-bottom:2px solid #f0f0f0;letter-spacing:.3px;}
+
+/* ── metric-card (기존 호환) ── */
+.metric-card{background:#fff;border-radius:10px;padding:12px 16px;border-left:4px solid #1E88E5;
+             border:1px solid #eee;border-left:4px solid #1E88E5;margin-bottom:6px;font-size:13px;}
+.metric-label{font-size:11px;color:#888;font-weight:600;}
+.metric-value{font-size:20px;font-weight:800;color:#111;}
+.metric-delta{font-size:12px;margin-top:2px;font-weight:600;}
 </style>""", unsafe_allow_html=True)
 
 # ── 데이터 로더 ───────────────────────────────────────────────────────────────
@@ -112,8 +146,13 @@ def kpi_card(col, label, value, delta=None, color="#1E88E5"):
         if delta is not None and not (isinstance(delta, float) and np.isnan(delta)):
             arrow = "▲" if delta > 0 else "▼"
             cls = "up" if delta > 0 else "dn"
-            delta_html = f'<div class="metric-delta {cls}">{arrow} {abs(delta):.1f}%</div>'
-        st.markdown(f'<div class="metric-card" style="border-left-color:{color}"><div class="metric-label">{label}</div><div class="metric-value">{value}</div>{delta_html}</div>', unsafe_allow_html=True)
+            delta_html = f'<div class="kpi-delta {cls}">{arrow} {abs(delta):.1f}%</div>'
+        st.markdown(
+            f'<div class="kpi" style="border-top-color:{color}">'
+            f'<div class="kpi-label">{label}</div>'
+            f'<div class="kpi-value">{value}</div>'
+            f'{delta_html}</div>',
+            unsafe_allow_html=True)
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
 st.sidebar.markdown("## 🏷️ 루저스클럽 ERP")
@@ -243,7 +282,7 @@ with tab1:
     yoy_val = (actual_rev - prev_rev) / prev_rev * 100 if prev_rev > 0 else None
 
     # ── 목표 달성 현황 ──────────────────────────────────────────────────────
-    st.markdown(f"### 📊 {last_ym} 목표 달성 현황")
+    st.markdown(f'<div class="sec-title">📊 {last_ym} 목표 달성 현황</div>', unsafe_allow_html=True)
     c1,c2,c3,c4,c5,c6 = st.columns(6)
     kpi_card(c1, "이번달 매출", f"{actual_rev/10000:,.0f}만", last['MoM'])
     if target_val > 0:
@@ -261,8 +300,6 @@ with tab1:
     kpi_card(c6, "예상 달성율", f"{expected_ach:.1f}%" if expected_ach else "-",
              color="#43A047" if (expected_ach or 0) >= 100 else "#FB8C00")
 
-    st.markdown("---")
-
     # ── 이번주 베스트 10 & 채널별 전주대비 ─────────────────────────────────
     last_date = df_all['날짜'].max()
     week_start = last_date - timedelta(days=6)
@@ -274,7 +311,7 @@ with tab1:
     col_left, col_right = st.columns([3, 2])
 
     with col_left:
-        st.markdown(f"### 🏆 이번주 베스트 10  <span style='font-size:13px;color:#888'>({week_start.strftime('%m/%d')} ~ {last_date.strftime('%m/%d')})</span>", unsafe_allow_html=True)
+        st.markdown(f'<div class="sec-title">🏆 이번주 베스트 10 &nbsp;<span style="font-weight:400;color:#aaa;font-size:11px">{week_start.strftime("%m/%d")} ~ {last_date.strftime("%m/%d")}</span></div>', unsafe_allow_html=True)
 
         this_week_style = this_week_df.groupby(['스타일코드','대표명']).agg(
             이번주=('판매금액','sum'), 수량=('수량','sum')).reset_index()
@@ -294,18 +331,21 @@ with tab1:
             if pd.notna(row['WoW']):
                 cls = "up" if row['WoW'] > 0 else "dn"
                 arrow = "▲" if row['WoW'] > 0 else "▼"
-                wow_html = f' <span class="{cls}">{arrow}{abs(row["WoW"]):.0f}%</span>'
-            medal = {1:"🥇",2:"🥈",3:"🥉"}.get(rank, f"{rank}위")
-            name_short = row['대표명'][:22]+'...' if len(row['대표명']) > 22 else row['대표명']
+                wow_html = f'<span class="rk-delta {cls}">{arrow}{abs(row["WoW"]):.0f}%</span>'
+            else:
+                wow_html = '<span class="rk-delta" style="color:#ccc">신규</span>'
+            medal = {1:"🥇",2:"🥈",3:"🥉"}.get(rank, f'<span style="font-size:11px;color:#999">{rank}</span>')
+            name_short = row['대표명'][:24]+'…' if len(row['대표명']) > 24 else row['대표명']
             st.markdown(
-                f'<div class="rank-row"><b style="font-size:16px;width:36px">{medal}</b>'
-                f'<span style="flex:1">{name_short}</span>'
-                f'<b style="color:#1E88E5">{row["이번주_만"]}만</b>'
+                f'<div class="rk">'
+                f'<span class="rk-medal">{medal}</span>'
+                f'<span class="rk-name">{name_short}</span>'
+                f'<span class="rk-val">{row["이번주_만"]}만</span>'
                 f'{wow_html}</div>',
                 unsafe_allow_html=True)
 
     with col_right:
-        st.markdown(f"### 📺 채널별 전주 대비")
+        st.markdown('<div class="sec-title">📺 채널별 전주 대비</div>', unsafe_allow_html=True)
 
         ch_this = this_week_df.groupby('채널')['판매금액'].sum().reset_index().rename(columns={'판매금액':'이번주'})
         ch_prev = prev_week_df.groupby('채널')['판매금액'].sum().reset_index().rename(columns={'판매금액':'전주'})
@@ -322,12 +362,12 @@ with tab1:
             if pd.notna(row['WoW']):
                 cls = "up" if row['WoW'] > 0 else "dn"
                 arrow = "▲" if row['WoW'] > 0 else "▼"
-                wow_html = f' <span class="{cls}">{arrow}{abs(row["WoW"]):.0f}%</span>'
+                wow_html = f'<span class="rk-delta {cls}">{arrow}{abs(row["WoW"]):.0f}%</span>'
             st.markdown(
-                f'<div class="rank-row">'
-                f'<span style="width:10px;height:10px;border-radius:50%;background:{color};display:inline-block;flex-shrink:0"></span>'
-                f'<span style="flex:1;margin-left:6px">{row["채널"]}</span>'
-                f'<b style="color:#1a1a1a">{row["이번주_만"]}만</b>'
+                f'<div class="ch-row">'
+                f'<span class="ch-dot" style="background:{color}"></span>'
+                f'<span class="ch-name">{row["채널"]}</span>'
+                f'<span class="ch-val">{row["이번주_만"]}만</span>'
                 f'{wow_html}</div>',
                 unsafe_allow_html=True)
 
