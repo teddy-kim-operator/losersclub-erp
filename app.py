@@ -87,6 +87,11 @@ section[data-testid="stSidebar"] .block-container{padding-top:1rem!important;}
 .metric-value{font-size:20px;font-weight:800;color:#111;}
 .metric-delta{font-size:12px;margin-top:2px;font-weight:600;}
 
+/* ── Streamlit 상단 툴바 숨김 ── */
+header[data-testid="stHeader"]{display:none!important;}
+#MainMenu{display:none!important;}
+footer{display:none!important;}
+
 /* ── 탭 바 상단 고정 ── */
 [data-baseweb="tab-list"]{
     position:sticky!important;top:0!important;z-index:999!important;
