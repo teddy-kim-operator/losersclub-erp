@@ -1394,21 +1394,22 @@ with tab9:
         if months_list:
             sel_month = st.selectbox("월 선택", months_list, key="goal_month")
             actual = df_all[df_all['년월'] == sel_month]['판매금액'].sum()
-            cur_goal = goal_data.get(sel_month, 0)
-            achievement = actual / cur_goal * 100 if cur_goal > 0 else 0
+            # targets는 만원 단위로 저장됨 (홈탭: * 10000 해서 원으로 변환)
+            cur_goal_man = goal_data.get(sel_month, 0)           # 만원
+            cur_goal_won = cur_goal_man * 10000                   # 원
+            achievement = actual / cur_goal_won * 100 if cur_goal_won > 0 else 0
 
             c1, c2, c3 = st.columns(3)
             kpi_card(c1, "실적", f"₩{actual/10000:,.0f}만")
-            kpi_card(c2, "목표", f"₩{cur_goal/10000:,.0f}만", color="#1565C0")
+            kpi_card(c2, "목표", f"₩{cur_goal_man:,}만", color="#1565C0")
             kpi_card(c3, "달성률", f"{achievement:.1f}%",
                      delta=achievement-100, color="#2E7D32" if achievement>=100 else "#C62828")
 
             st.markdown("---")
-            new_goal_man = st.number_input("목표 금액 (만원)", value=int(cur_goal/10000), step=100,
+            new_goal_man = st.number_input("목표 금액 (만원)", value=int(cur_goal_man), step=100,
                                            format="%d", key="new_goal_input")
             if st.button("💾 저장", key="save_goal"):
-                new_goal = new_goal_man * 10000
-                goal_data[sel_month] = new_goal
+                goal_data[sel_month] = new_goal_man   # 만원 단위로 저장
                 save_goals(goal_data)
                 st.success(f"{sel_month} 목표 ₩{new_goal_man:,}만 저장 완료!")
                 st.rerun()
@@ -1418,9 +1419,9 @@ with tab9:
             goal_rows = []
             for m in months_list:
                 act = df_all[df_all['년월'] == m]['판매금액'].sum()
-                g   = goal_data.get(m, 0)
-                ach = act/g*100 if g>0 else 0
-                goal_rows.append({"월": m, "실적(만)": f"{act/10000:,.0f}", "목표(만)": f"{g/10000:,.0f}", "달성률": f"{ach:.1f}%"})
+                g_man = goal_data.get(m, 0)           # 만원
+                ach = act / (g_man * 10000) * 100 if g_man > 0 else 0
+                goal_rows.append({"월": m, "실적(만)": f"{act/10000:,.0f}", "목표(만)": f"{g_man:,}", "달성률": f"{ach:.1f}%"})
             st.dataframe(pd.DataFrame(goal_rows), use_container_width=True, hide_index=True)
         else:
             st.info("데이터를 먼저 업로드하세요.")
