@@ -193,8 +193,8 @@ def load_marketing(filepath: str):
 
 # ── 탭 (7탭) ──────────────────────────────────────────────────────────────────
 tabs = st.tabs(["📊 홈", "🏷️ 카테고리", "📺 채널", "🏆 상품랭킹",
-                "🔬 상품분석", "🏪 팝업 & 마케팅", "⚙️ 관리"])
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = tabs
+                "🔬 상품분석", "🏪 팝업", "📣 마케팅", "⚙️ 관리"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = tabs
 
 # ════════════════════════════════════════════════════════════════════════════
 # TAB 1 — 홈
@@ -665,74 +665,215 @@ with tab5:
             st.plotly_chart(fig, use_container_width=True)
 
 # ════════════════════════════════════════════════════════════════════════════
-# TAB 6 — 팝업 & 마케팅
+# TAB 6 — 프로모션
 # ════════════════════════════════════════════════════════════════════════════
-with tab6:
-    st.markdown("### 🏪 팝업 & 마케팅")
-    pm_sub = st.tabs(["🏪 팝업 분석", "📣 마케팅 효율", "💡 이번주 인사이트"])
+PROMO_TYPES = ["팝업", "기획전", "할인행사", "콜라보", "시즌오프", "기타"]
+PROMO_CHANNELS = ["전채널", "무신사", "자사몰", "29CM", "팝업(더현대)", "무신사글로벌"]
+TYPE_COLORS = {"팝업":"#8E24AA","기획전":"#1E88E5","할인행사":"#E53935","콜라보":"#FB8C00","시즌오프":"#43A047","기타":"#607D8B"}
 
-    # ── 팝업 분석 ─────────────────────────────────────────────────────────────
-    with pm_sub[0]:
-        popup_df = df_all[df_all['채널']=='팝업(더현대)'].copy()
-        online_df = df_all[df_all['채널']!='팝업(더현대)'].copy()
-        if popup_df.empty:
-            st.info("팝업 데이터가 없습니다.")
+with tab6:
+    st.markdown("### 🎪 프로모션")
+    mgmt_p = load_mgmt()
+    promotions = mgmt_p.get("promotions", [])
+    pr_sub1, pr_sub2, pr_sub3 = st.tabs(["📋 전체 목록", "🔍 프로모션 분석", "➕ 신규 등록"])
+
+    # ── 전체 목록 ─────────────────────────────────────────────────────────────
+    with pr_sub1:
+        if not promotions:
+            st.info("등록된 프로모션이 없습니다. '신규 등록' 탭에서 추가하세요.")
         else:
-            popup_periods = sorted(popup_df['년월'].unique())
-            st.markdown(f"**팝업 운영 기간:** {popup_periods[0]} ~ {popup_periods[-1]} ({len(popup_periods)}개월)")
-            c1,c2,c3 = st.columns(3)
-            kpi_card(c1, "팝업 총 매출", f"{popup_df['판매금액'].sum()/10000:,.0f}만", color="#8E24AA")
-            kpi_card(c2, "팝업 총 수량", f"{int(popup_df['수량'].sum()):,}개", color="#8E24AA")
-            kpi_card(c3, "팝업 SKU 수", f"{popup_df['스타일코드'].nunique()}개", color="#8E24AA")
-            popup_style = popup_df.groupby(['스타일코드','대표명','카테고리']).agg(
-                팝업매출=('판매금액','sum'), 팝업수량=('수량','sum')).reset_index()
-            popup_style = popup_style.sort_values('팝업매출', ascending=False).reset_index(drop=True)
-            popup_style['팝업매출_만'] = (popup_style['팝업매출']/10000).round(1)
-            online_style = online_df.groupby('스타일코드').agg(
-                온라인매출=('판매금액','sum'), 온라인수량=('수량','sum')).reset_index()
-            compare = popup_style.merge(online_style, on='스타일코드', how='left')
-            compare['온라인매출_만'] = (compare['온라인매출'].fillna(0)/10000).round(1)
-            compare['온라인비율'] = (compare['팝업매출']/(compare['팝업매출']+compare['온라인매출'].fillna(0))*100).round(1)
-            col_a,col_b = st.columns([3,2])
-            with col_a:
-                top10 = compare.head(10)
-                fig = go.Figure()
-                fig.add_bar(name='팝업 매출', x=top10['대표명'].apply(lambda x: x[:15]+'...' if len(x)>15 else x),
-                            y=top10['팝업매출_만'], marker_color='#8E24AA')
-                fig.add_bar(name='온라인 매출', x=top10['대표명'].apply(lambda x: x[:15]+'...' if len(x)>15 else x),
-                            y=top10['온라인매출_만'], marker_color='#CE93D8')
-                fig.update_layout(barmode='group', title='팝업 vs 온라인 (TOP10)',
-                                  height=380, plot_bgcolor='white', legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-30))
-                st.plotly_chart(fig, use_container_width=True)
-            with col_b:
-                st.markdown("#### 팝업 전용 상품")
-                popup_only = compare[compare['온라인매출'].isna() | (compare['온라인매출']==0)]
-                if not popup_only.empty:
-                    for _, r in popup_only.head(8).iterrows():
-                        st.markdown(f'<div class="warn-card"><b>{r["대표명"]}</b><br>{r["카테고리"]} | {r["팝업매출_만"]}만 | {int(r["팝업수량"])}개</div>', unsafe_allow_html=True)
-                else:
-                    st.info("팝업 전용 상품 없음")
-            # 헤일로 vs 카니발리제이션
-            popup_month_rev = online_df[online_df['년월'].isin(popup_periods)].groupby('년월')['판매금액'].sum()
-            all_monthly_online = online_df.groupby('년월')['판매금액'].sum().sort_index()
-            halo_fig = go.Figure()
-            halo_fig.add_scatter(x=all_monthly_online.index, y=(all_monthly_online/10000).round(),
-                                 name='온라인 전체', mode='lines+markers', line=dict(color='#1E88E5',width=2))
-            if not popup_month_rev.empty:
-                halo_fig.add_scatter(x=popup_month_rev.index, y=(popup_month_rev/10000).round(),
-                                     name='팝업 운영월', mode='markers',
-                                     marker=dict(color='#8E24AA',size=12,symbol='star'))
-            halo_fig.update_layout(title='온라인 매출 + 팝업 운영월', height=280, plot_bgcolor='white',
-                                   legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45))
-            st.plotly_chart(halo_fig, use_container_width=True)
-            with st.expander("📋 팝업 전체 목록"):
-                disp = compare[['대표명','카테고리','팝업매출_만','팝업수량','온라인매출_만','온라인비율']].copy()
-                disp['온라인비율'] = disp['온라인비율'].apply(lambda x: f"{x}%")
-                disp.columns = ['상품명','카테고리','팝업매출(만)','팝업수량','온라인매출(만)','팝업비율(%)']
-                st.dataframe(disp, use_container_width=True, hide_index=True)
+            st.markdown(f"**총 {len(promotions)}개 프로모션**")
+            for i, p in enumerate(sorted(promotions, key=lambda x: x.get('start_date',''), reverse=True)):
+                tc = TYPE_COLORS.get(p.get('type','기타'), '#607D8B')
+                days = 0
+                try:
+                    s = datetime.strptime(p['start_date'], '%Y-%m-%d')
+                    e = datetime.strptime(p['end_date'], '%Y-%m-%d')
+                    days = (e - s).days + 1
+                except: pass
+                col_a, col_b = st.columns([8, 1])
+                with col_a:
+                    st.markdown(
+                        f'<div class="metric-card" style="border-left-color:{tc};padding:10px 14px">'
+                        f'<span style="background:{tc};color:white;border-radius:4px;padding:2px 8px;font-size:11px">{p.get("type","기타")}</span>'
+                        f'<span style="margin-left:8px;font-weight:600;font-size:15px">{p.get("name","")}</span>'
+                        f'<span style="margin-left:10px;color:#888;font-size:12px">{p.get("channel","")}</span><br>'
+                        f'<span style="color:#555;font-size:12px">📅 {p.get("start_date","")} ~ {p.get("end_date","")} ({days}일)'
+                        f'{"  |  🎯 목표 "+str(p.get("target_rev",""))+"만" if p.get("target_rev") else ""}'
+                        f'{"  |  "+p.get("memo","") if p.get("memo") else ""}</span>'
+                        f'</div>', unsafe_allow_html=True)
+                with col_b:
+                    if st.button("🗑️", key=f"del_promo_{i}"):
+                        promotions_del = [x for j,x in enumerate(promotions) if x.get('name') != p.get('name') or x.get('start_date') != p.get('start_date')]
+                        mgmt_p['promotions'] = promotions_del
+                        save_mgmt(mgmt_p); st.rerun()
+
+    # ── 프로모션 분석 ─────────────────────────────────────────────────────────
+    with pr_sub2:
+        if not promotions:
+            st.info("등록된 프로모션이 없습니다.")
+        else:
+            promo_labels = [f"{p.get('name','')}  ({p.get('start_date','')} ~ {p.get('end_date','')})" for p in promotions]
+            sel_idx = st.selectbox("분석할 프로모션 선택", range(len(promo_labels)), format_func=lambda i: promo_labels[i])
+            sel_p = promotions[sel_idx]
+
+            try:
+                p_start = pd.to_datetime(sel_p['start_date'])
+                p_end   = pd.to_datetime(sel_p['end_date'])
+                p_days  = (p_end - p_start).days + 1
+                prev_end   = p_start - pd.Timedelta(days=1)
+                prev_start = prev_end - pd.Timedelta(days=p_days - 1)
+            except:
+                st.error("날짜 형식 오류"); st.stop()
+
+            ch = sel_p.get('channel', '전채널')
+            if ch == '전채널':
+                p_df   = df_all[(df_all['날짜'] >= p_start) & (df_all['날짜'] <= p_end)]
+                prev_df = df_all[(df_all['날짜'] >= prev_start) & (df_all['날짜'] <= prev_end)]
+            else:
+                p_df   = df_all[(df_all['날짜'] >= p_start) & (df_all['날짜'] <= p_end) & (df_all['채널'] == ch)]
+                prev_df = df_all[(df_all['날짜'] >= prev_start) & (df_all['날짜'] <= prev_end) & (df_all['채널'] == ch)]
+
+            tc = TYPE_COLORS.get(sel_p.get('type','기타'), '#607D8B')
+            st.markdown(f'<div class="metric-card" style="border-left-color:{tc}">'
+                        f'<b>{sel_p.get("name","")}</b> | {sel_p.get("type","")} | {ch} | {sel_p.get("start_date","")} ~ {sel_p.get("end_date","")}'
+                        f'</div>', unsafe_allow_html=True)
+
+            # KPI
+            rev   = p_df['판매금액'].sum()
+            qty   = p_df['수량'].sum()
+            prev_rev = prev_df['판매금액'].sum()
+            target_val = (sel_p.get('target_rev') or 0) * 10000
+            wow = (rev - prev_rev) / prev_rev * 100 if prev_rev > 0 else None
+            ach = rev / target_val * 100 if target_val > 0 else None
+
+            c1,c2,c3,c4 = st.columns(4)
+            kpi_card(c1, "프로모션 매출", f"{rev/10000:,.1f}만", color=tc)
+            kpi_card(c2, "판매 수량", f"{int(qty):,}개", color=tc)
+            kpi_card(c3, "전기간 대비", f"{wow:+.1f}%" if wow is not None else "-", color="#43A047" if (wow or 0) >= 0 else "#E53935")
+            kpi_card(c4, "목표 달성율", f"{ach:.1f}%" if ach is not None else "목표 미설정", color="#43A047" if (ach or 0) >= 100 else "#FB8C00")
+
+            if p_df.empty:
+                st.warning("해당 기간/채널 데이터가 없습니다.")
+            else:
+                col1, col2 = st.columns([3,2])
+                with col1:
+                    # 일별 매출 트렌드
+                    daily = p_df.groupby('날짜')['판매금액'].sum().reset_index()
+                    daily_prev = prev_df.groupby('날짜')['판매금액'].sum().reset_index() if not prev_df.empty else pd.DataFrame()
+                    trend_fig = go.Figure()
+                    trend_fig.add_scatter(x=daily['날짜'], y=(daily['판매금액']/10000).round(1),
+                                         name='프로모션 기간', mode='lines+markers',
+                                         line=dict(color=tc, width=2), fill='tozeroy', fillcolor=tc+'22')
+                    if not daily_prev.empty:
+                        trend_fig.add_scatter(x=daily_prev['날짜'], y=(daily_prev['판매금액']/10000).round(1),
+                                             name='전기간', mode='lines', line=dict(color='#aaa', width=1, dash='dot'))
+                    trend_fig.update_layout(title='일별 매출 (만원)', height=280, plot_bgcolor='white',
+                                           legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-30))
+                    st.plotly_chart(trend_fig, use_container_width=True)
+                with col2:
+                    # 상품별 TOP 10
+                    top_items = p_df.groupby(['스타일코드','대표명']).agg(
+                        매출=('판매금액','sum'), 수량=('수량','sum')).reset_index()
+                    top_items = top_items.sort_values('매출', ascending=False).head(10)
+                    top_items['매출_만'] = (top_items['매출']/10000).round(1)
+                    item_fig = go.Figure(go.Bar(
+                        x=top_items['매출_만'],
+                        y=top_items['대표명'].apply(lambda x: x[:18]+'...' if len(x)>18 else x),
+                        orientation='h', marker_color=tc))
+                    item_fig.update_layout(title='상품별 매출 TOP10', height=280,
+                                          plot_bgcolor='white', xaxis_title='만원',
+                                          yaxis=dict(autorange='reversed'))
+                    st.plotly_chart(item_fig, use_container_width=True)
+
+                # 채널별 분포 (전채널인 경우)
+                if ch == '전채널' and p_df['채널'].nunique() > 1:
+                    ch_breakdown = p_df.groupby('채널')['판매금액'].sum().reset_index().sort_values('판매금액', ascending=False)
+                    ch_breakdown['매출_만'] = (ch_breakdown['판매금액']/10000).round(1)
+                    ch_fig = go.Figure(go.Bar(x=ch_breakdown['채널'], y=ch_breakdown['매출_만'],
+                                             marker_color=[CH_COLORS.get(c,'#888') for c in ch_breakdown['채널']]))
+                    ch_fig.update_layout(title='채널별 매출 분포', height=220, plot_bgcolor='white')
+                    st.plotly_chart(ch_fig, use_container_width=True)
+
+                # 인사이트 자동 생성
+                st.markdown("---")
+                st.markdown("### 💡 인사이트")
+                insights = []
+                if wow is not None:
+                    if wow >= 20:
+                        insights.append(f"✅ **전기간 대비 +{wow:.1f}%** — 프로모션 효과 뚜렷. 동일 유형 반복 운영 권장.")
+                    elif wow >= 0:
+                        insights.append(f"🟡 **전기간 대비 +{wow:.1f}%** — 소폭 증가. 프로모션 조건 강화 시 효과 개선 가능.")
+                    else:
+                        insights.append(f"🔴 **전기간 대비 {wow:.1f}%** — 매출 하락. 프로모션 유형/채널/타이밍 재검토 필요.")
+                if ach is not None:
+                    if ach >= 100:
+                        insights.append(f"🎯 **목표 달성율 {ach:.1f}%** — 목표 초과 달성.")
+                    else:
+                        insights.append(f"⚠️ **목표 달성율 {ach:.1f}%** — 목표 미달 {target_val/10000 - rev/10000:,.1f}만원 부족.")
+                if not top_items.empty:
+                    top1 = top_items.iloc[0]
+                    insights.append(f"🏆 **최고 매출 상품:** {top1['대표명']} ({top1['매출_만']}만 / {int(top1['수량'])}개)")
+                    top3_share = top_items.head(3)['매출'].sum() / rev * 100
+                    insights.append(f"📊 **TOP3 집중도:** 상위 3개 상품이 프로모션 매출의 {top3_share:.1f}% 차지.")
+                avg_daily = rev / p_days / 10000
+                insights.append(f"📅 **일평균 매출:** {avg_daily:.1f}만원 ({p_days}일 기준)")
+                for txt in insights:
+                    st.markdown(f'<div class="insight-card">{txt}</div>', unsafe_allow_html=True)
+
+                with st.expander("📋 전체 상품 목록"):
+                    full_items = p_df.groupby(['스타일코드','대표명','카테고리']).agg(
+                        매출=('판매금액','sum'), 수량=('수량','sum')).reset_index()
+                    full_items = full_items.sort_values('매출', ascending=False)
+                    full_items['매출(만)'] = (full_items['매출']/10000).round(1)
+                    st.dataframe(full_items[['대표명','카테고리','매출(만)','수량']], use_container_width=True, hide_index=True)
+
+    # ── 신규 등록 ─────────────────────────────────────────────────────────────
+    with pr_sub3:
+        st.markdown("**새 프로모션 등록**")
+        r1c1, r1c2, r1c3 = st.columns(3)
+        new_name    = r1c1.text_input("프로모션명", placeholder="예: 무신사 여름 기획전")
+        new_type    = r1c2.selectbox("유형", PROMO_TYPES)
+        new_channel = r1c3.selectbox("채널", PROMO_CHANNELS)
+
+        r2c1, r2c2, r2c3 = st.columns(3)
+        new_start  = r2c1.date_input("시작일")
+        new_end    = r2c2.date_input("종료일")
+        new_target = r2c3.number_input("목표 매출 (만원, 0=미설정)", min_value=0, step=100)
+
+        new_memo = st.text_area("메모 (선택)", placeholder="예: 여름 시즌오프, 티셔츠 20% 할인", height=80)
+
+        if st.button("💾 등록", type="primary"):
+            if not new_name:
+                st.error("프로모션명을 입력하세요.")
+            elif new_end < new_start:
+                st.error("종료일이 시작일보다 빠릅니다.")
+            else:
+                new_promo = {
+                    "name": new_name,
+                    "type": new_type,
+                    "channel": new_channel,
+                    "start_date": str(new_start),
+                    "end_date": str(new_end),
+                    "target_rev": int(new_target) if new_target > 0 else None,
+                    "memo": new_memo,
+                    "registered": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                }
+                promotions.append(new_promo)
+                mgmt_p['promotions'] = promotions
+                save_mgmt(mgmt_p)
+                st.success(f"✅ '{new_name}' 등록 완료!")
+                st.rerun()
+
+# ════════════════════════════════════════════════════════════════════════════
+# TAB 7 — 마케팅
+# ════════════════════════════════════════════════════════════════════════════
+with tab7:
+    st.markdown("### 📣 마케팅")
+    mkt_sub = st.tabs(["📊 마케팅 효율", "💡 이번주 인사이트"])
 
     # ── 마케팅 효율 ───────────────────────────────────────────────────────────
-    with pm_sub[1]:
+    with mkt_sub[0]:
         mktg = load_marketing(str(MKTG_FILE))
         if mktg is None:
             st.warning(f"마케팅 파일을 찾을 수 없습니다: {MKTG_FILE}")
@@ -793,7 +934,7 @@ with tab6:
             st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
 
     # ── 이번주 인사이트 ───────────────────────────────────────────────────────
-    with pm_sub[2]:
+    with mkt_sub[1]:
         st.markdown("### 💡 이번주 채널별 마케팅 인사이트")
         mktg2 = load_marketing(str(MKTG_FILE))
         if mktg2 is None:
@@ -896,12 +1037,12 @@ with tab6:
                 st.info("이번주 광고 데이터가 없습니다.")
 
 # ════════════════════════════════════════════════════════════════════════════
-# TAB 7 — 관리
+# TAB 8 — 관리
 # ════════════════════════════════════════════════════════════════════════════
-with tab7:
+with tab8:
     st.markdown("### ⚙️ 관리")
     mgmt = load_mgmt()
-    sub1,sub2,sub3 = st.tabs(["🎯 월별 목표","📦 상품 메모","✅ TODO"])
+    sub1,sub2,sub3,sub4 = st.tabs(["🎯 월별 목표","📦 상품 메모","✅ TODO","📥 매출 업데이트"])
 
     with sub1:
         st.markdown("**월별 매출 목표 설정 (만원)**")
@@ -972,3 +1113,42 @@ with tab7:
         if done_items:
             with st.expander(f"✅ 완료 ({len(done_items)}개)"):
                 for t in done_items: st.markdown(f"~~{t['task']}~~")
+
+    with sub4:
+        import subprocess, sys
+        st.markdown("**📥 채널별 로우파일 → 통합 매출 자동 업데이트**")
+        st.markdown("""
+        `ERP/raw/` 폴더에 아래 파일을 넣고 버튼을 누르세요.
+
+        | 채널 | 파일명 |
+        |------|--------|
+        | 무신사 | `무신사.xls` |
+        | 무신사글로벌 | `무신사글로벌.xls` |
+        | 자사몰 | `자사몰.csv` |
+        | 29CM | `29cm.xlsx` |
+        """)
+        raw_dir = Path(__file__).parent / "raw"
+        raw_files = list(raw_dir.glob("*")) if raw_dir.exists() else []
+        if raw_files:
+            st.success(f"raw 폴더 내 파일: {', '.join([f.name for f in raw_files])}")
+        else:
+            st.warning("raw 폴더가 비어 있거나 없습니다.")
+
+        if st.button("🔄 지금 업데이트 실행", type="primary"):
+            merge_script = Path(__file__).parent / "merge_raw.py"
+            if not merge_script.exists():
+                st.error("merge_raw.py 파일이 없습니다.")
+            else:
+                with st.spinner("실행 중..."):
+                    result = subprocess.run(
+                        [sys.executable, str(merge_script)],
+                        capture_output=True, text=True, encoding='utf-8', errors='replace'
+                    )
+                if result.returncode == 0:
+                    st.success("✅ 업데이트 완료!")
+                    st.code(result.stdout or "(출력 없음)")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("❌ 오류 발생")
+                    st.code(result.stderr or result.stdout)
