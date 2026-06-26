@@ -263,8 +263,8 @@ def load_marketing(filepath: str):
 
 # ── 탭 (7탭) ──────────────────────────────────────────────────────────────────
 tabs = st.tabs(["📊 홈", "🏷️ 카테고리", "📺 채널", "🏆 상품랭킹",
-                "🔬 상품분석", "🏪 팝업", "📣 마케팅", "⚙️ 관리"])
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = tabs
+                "🔬 상품분석", "🏪 팝업", "📣 마케팅", "💡 인사이트", "⚙️ 관리"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = tabs
 
 # ════════════════════════════════════════════════════════════════════════════
 # TAB 1 — 홈
@@ -1108,118 +1108,365 @@ with tab7:
                 st.info("이번주 광고 데이터가 없습니다.")
 
 # ════════════════════════════════════════════════════════════════════════════
-# TAB 8 — 관리
+# TAB 8 — 인사이트
 # ════════════════════════════════════════════════════════════════════════════
 with tab8:
-    st.markdown("### ⚙️ 관리")
-    mgmt = load_mgmt()
+    st.markdown("### 💡 이번 주 매출 인사이트")
+    st.caption("데이터 기반 자동 분석 · 20년 실무자가 봐야 할 시그널 중심")
+
+    # ── 인사이트 카드 렌더러 ─────────────────────────────────────────────────
+    def ins_card(tag, emoji, title, body_text, action=None):
+        tag_colors = {
+            "기회":  ("#e8f5e9", "#2e7d32", "🟢"),
+            "리스크": ("#fff5f5", "#c62828", "🔴"),
+            "주의":  ("#fff8e1", "#e65100", "⚠️"),
+            "액션":  ("#e8f0fe", "#1a237e", "📌"),
+            "정보":  ("#f0f6ff", "#1565c0", "ℹ️"),
+        }
+        bg, border, dot = tag_colors.get(tag, ("#f9f9f9","#888","•"))
+        action_html = f'<div style="margin-top:6px;font-size:12px;color:#555;background:rgba(0,0,0,.04);padding:5px 8px;border-radius:5px;">→ {action}</div>' if action else ""
+        st.markdown(
+            f'<div style="background:{bg};border-left:4px solid {border};border-radius:8px;'
+            f'padding:12px 16px;margin:6px 0;">'
+            f'<div style="font-size:11px;font-weight:700;color:{border};letter-spacing:.5px;margin-bottom:4px;">'
+            f'{dot} {tag.upper()}</div>'
+            f'<div style="font-size:14px;font-weight:700;color:#111;margin-bottom:4px;">{title}</div>'
+            f'<div style="font-size:13px;color:#444;line-height:1.6;">{body_text}</div>'
+            f'{action_html}</div>',
+            unsafe_allow_html=True
+        )
+
+    # ── 데이터 계산 ──────────────────────────────────────────────────────────
+    # 주별 집계
+    weekly_all = df.groupby('주차').agg(
+        매출=('판매금액','sum'), 수량=('수량','sum')
+    ).reset_index().sort_values('주차').reset_index(drop=True)
+
+    # 일별 집계 (최근 28일)
+    cutoff_28 = pd.Timestamp.now() - pd.Timedelta(days=28)
+    df_28 = df[df['날짜'] >= cutoff_28]
+    daily_28 = df_28.groupby('날짜')['판매금액'].sum().reset_index()
+    daily_avg_28 = daily_28['판매금액'].mean() if len(daily_28) > 0 else 0
+
+    # 최근 2주 vs 그 이전 2주 비교
+    if len(weekly_all) >= 4:
+        last2w_rev  = weekly_all.tail(2)['매출'].sum()
+        prev2w_rev  = weekly_all.tail(4).head(2)['매출'].sum()
+        wow2_pct    = (last2w_rev - prev2w_rev) / prev2w_rev * 100 if prev2w_rev > 0 else 0
+    else:
+        last2w_rev, prev2w_rev, wow2_pct = 0, 0, 0
+
+    # 이동평균 (4주)
+    if len(weekly_all) >= 4:
+        ma4  = weekly_all.tail(4)['매출'].mean()
+        ma8  = weekly_all.tail(8)['매출'].mean() if len(weekly_all) >= 8 else weekly_all['매출'].mean()
+        trend_pct = (ma4 - ma8) / ma8 * 100 if ma8 > 0 else 0
+        last_week_rev = weekly_all.iloc[-1]['매출']
+        last_week_wow = (last_week_rev - weekly_all.iloc[-2]['매출']) / weekly_all.iloc[-2]['매출'] * 100 if len(weekly_all) >= 2 and weekly_all.iloc[-2]['매출'] > 0 else 0
+    else:
+        ma4, trend_pct, last_week_rev, last_week_wow = 0, 0, 0, 0
+
+    # 카테고리 쏠림
+    cat_rev = df.groupby('카테고리')['판매금액'].sum().sort_values(ascending=False)
+    cat_pct = (cat_rev / cat_rev.sum() * 100).round(1)
+    top_cat = cat_pct.index[0] if len(cat_pct) > 0 else "-"
+    top_cat_pct = cat_pct.iloc[0] if len(cat_pct) > 0 else 0
+
+    # 채널 의존도
+    ch_rev = df.groupby('채널')['판매금액'].sum().sort_values(ascending=False)
+    ch_pct = (ch_rev / ch_rev.sum() * 100).round(1)
+    top_ch = ch_pct.index[0] if len(ch_pct) > 0 else "-"
+    top_ch_pct = ch_pct.iloc[0] if len(ch_pct) > 0 else 0
+
+    # 평균 할인율 추이
+    if len(weekly_all) >= 2:
+        last_wk_str = weekly_all.iloc[-1]['주차']
+        prev_wk_str = weekly_all.iloc[-2]['주차']
+        disc_last = df[df['주차'] == last_wk_str]['할인율'].mean()
+        disc_prev = df[df['주차'] == prev_wk_str]['할인율'].mean()
+        disc_delta = disc_last - disc_prev if not (np.isnan(disc_last) or np.isnan(disc_prev)) else 0
+    else:
+        disc_last, disc_delta = df['할인율'].mean(), 0
+
+    # ASP (평균 판매단가) 추이
+    if len(weekly_all) >= 2:
+        asp_last = df[df['주차'] == last_wk_str]['판매단가'].mean()
+        asp_prev = df[df['주차'] == prev_wk_str]['판매단가'].mean()
+        asp_delta_pct = (asp_last - asp_prev) / asp_prev * 100 if asp_prev > 0 and not np.isnan(asp_prev) else 0
+    else:
+        asp_last, asp_delta_pct = df['판매단가'].mean(), 0
+
+    # TOP3 상품 집중도
+    top3_rev = cat_rev.head(3).sum()
+    top3_pct = top3_rev / cat_rev.sum() * 100 if cat_rev.sum() > 0 else 0
+
+    # 다음 주 예측 (최근 4주 평균 × 계절 보정 없음)
+    forecast_low  = ma4 * 0.85
+    forecast_high = ma4 * 1.15
+
+    # ── 대시보드 헤더 수치 ────────────────────────────────────────────────────
+    col_a, col_b, col_c, col_d = st.columns(4)
+    kpi_card(col_a, "최근 주 매출", f"₩{last_week_rev/10000:,.0f}만",
+             delta=last_week_wow)
+    kpi_card(col_b, "4주 이동평균", f"₩{ma4/10000:,.0f}만",
+             delta=trend_pct, color="#43A047")
+    kpi_card(col_c, "일 평균 (28일)", f"₩{daily_avg_28/10000:,.0f}만",
+             color="#FB8C00")
+    kpi_card(col_d, "평균 할인율", f"{disc_last:.1f}%" if not np.isnan(disc_last) else "-",
+             delta=disc_delta, color="#E53935")
+
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    # ── 인사이트 카드 ─────────────────────────────────────────────────────────
+    col_l, col_r = st.columns(2)
+
+    with col_l:
+        st.markdown('<div class="sec-title">📡 신호 분석</div>', unsafe_allow_html=True)
+
+        # ① 신호 vs 노이즈
+        if abs(last_week_wow) >= 20:
+            tag = "기회" if last_week_wow > 0 else "리스크"
+            _cmp = "상회" if last_week_rev > ma4 else "하회"
+            ins_card(tag, "", "유의미한 매출 변화 감지",
+                f"전주 대비 <b>{last_week_wow:+.1f}%</b>. 단발성 이벤트 여부 확인 필요. "
+                f"4주 이동평균(₩{ma4/10000:,.0f}만)과 비교 시 {_cmp}.",
+                action="이벤트/행사 여부 확인 → 다음 주 지속 여부 판단")
+        elif abs(last_week_wow) >= 10:
+            ins_card("주의", "", "노이즈 경계 구간",
+                f"전주 대비 <b>{last_week_wow:+.1f}%</b>. 아직 노이즈 범위지만 2주 연속 지속되면 신호.",
+                action="다음 주 매출 주시 — 같은 방향이면 원인 분석 필요")
+        else:
+            _dir = "📈 상승" if trend_pct > 2 else ("📉 하락" if trend_pct < -2 else "→ 보합")
+            ins_card("정보", "", "정상 범위 내 변동",
+                f"전주 대비 <b>{last_week_wow:+.1f}%</b>. 4주 이동평균 대비 안정적. "
+                f"트렌드 방향: {_dir} ({trend_pct:+.1f}%/4주).")
+
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+
+        # ② 할인율 시그널
+        if not np.isnan(disc_last):
+            if disc_last > 20:
+                ins_card("리스크", "", f"할인율 위험 수위 ({disc_last:.1f}%)",
+                    f"평균 할인율 <b>{disc_last:.1f}%</b>. 전주 대비 {disc_delta:+.1f}%p. "
+                    "쿠폰/프로모션 없이 팔리는 비중이 낮아지고 있음. 정가 경쟁력 점검 필요.",
+                    action="할인 없는 주간의 베이스 매출 별도 추적 시작")
+            elif disc_delta > 3:
+                ins_card("주의", "", f"할인율 상승 추세 ({disc_last:.1f}%)",
+                    f"전주 대비 <b>+{disc_delta:.1f}%p</b> 상승. 프로모션 의존도 증가 신호.",
+                    action="행사 없는 주간 할인율과 비교 — 구조적 상승인지 확인")
+            else:
+                ins_card("정보", "", f"할인율 안정 ({disc_last:.1f}%)",
+                    f"전주 대비 {disc_delta:+.1f}%p. 과도한 쿠폰 의존 없이 운영 중.")
+
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+
+        # ③ ASP 추이
+        if not np.isnan(asp_delta_pct):
+            if asp_delta_pct < -5:
+                ins_card("주의", "", f"평균 판매단가 하락 ({asp_delta_pct:+.1f}%)",
+                    f"단가가 <b>{asp_delta_pct:.1f}%</b> 내려갔습니다. 저가 상품 믹스 증가 또는 할인 확대 신호.",
+                    action="고단가 상품(PT/팬츠) 판매 비중 확인")
+            elif asp_delta_pct > 5:
+                ins_card("기회", "", f"평균 판매단가 상승 ({asp_delta_pct:+.1f}%)",
+                    f"단가가 <b>+{asp_delta_pct:.1f}%</b> 올랐습니다. 고가 상품 판매 증가 또는 할인 축소 효과.")
+            else:
+                ins_card("정보", "", f"단가 안정 ({asp_delta_pct:+.1f}%)",
+                    f"평균 판매단가 전주 대비 {asp_delta_pct:+.1f}%. 상품 믹스 변화 없음.")
+
+    with col_r:
+        st.markdown('<div class="sec-title">⚠️ 리스크 & 액션</div>', unsafe_allow_html=True)
+
+        # ④ 카테고리 쏠림
+        if top_cat_pct >= 85:
+            ins_card("리스크", "", f"{top_cat} 쏠림 위험 ({top_cat_pct:.0f}%)",
+                f"전체 매출의 <b>{top_cat_pct:.0f}%</b>가 {top_cat} 단일 카테고리. "
+                "이 카테고리가 꺾이면 브랜드 전체가 꺾입니다.",
+                action="2위 카테고리 육성 플랜 — 기획전/시딩 배분 조정 검토")
+        elif top_cat_pct >= 70:
+            ins_card("주의", "", f"{top_cat} 의존도 주의 ({top_cat_pct:.0f}%)",
+                f"매출의 {top_cat_pct:.0f}%가 {top_cat}. 아직 관리 가능하나 추가 쏠림 방지 필요.",
+                action="다음 기획전에서 2위 카테고리 노출 비중 의도적으로 높이기")
+        else:
+            ins_card("기회", "", f"카테고리 분산 양호 ({top_cat_pct:.0f}%)",
+                f"1위 {top_cat}이 {top_cat_pct:.0f}%. 분산이 이루어지고 있음.")
+
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+
+        # ⑤ 채널 의존도
+        if top_ch_pct >= 80:
+            ins_card("리스크", "", f"{top_ch} 채널 쏠림 ({top_ch_pct:.0f}%)",
+                f"매출의 <b>{top_ch_pct:.0f}%</b>가 {top_ch}. "
+                f"{top_ch} 알고리즘/정책 변경 시 즉각적 타격.",
+                action="29CM / 자사몰 비중 늘리는 기획전 별도 운영")
+        elif top_ch_pct >= 65:
+            ins_card("주의", "", f"{top_ch} 의존도 높음 ({top_ch_pct:.0f}%)",
+                f"{top_ch}이 {top_ch_pct:.0f}%. 단일 채널 의존 리스크 관리 시점.",
+                action="이번 달 자사몰 기획전 1회 추가 운영 검토")
+        else:
+            ins_card("기회", "", f"채널 분산 진행 중 ({top_ch}: {top_ch_pct:.0f}%)",
+                f"최상위 채널이 {top_ch_pct:.0f}%. 멀티채널 전략 효과 나오는 중.")
+
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+
+        # ⑥ 다음 주 예측
+        ins_card("액션", "", "다음 주 예상 매출 범위",
+            f"최근 4주 이동평균 기준: <b>₩{forecast_low/10000:,.0f}만 ~ ₩{forecast_high/10000:,.0f}만</b>.<br>"
+            "이벤트 없는 베이스 예측. 기획전 집행 시 +20~40% 가산 가능.",
+            action=f"다음 주 목표를 ₩{(ma4*1.05)/10000:,.0f}만으로 설정하고 미팅에서 확인")
+
+    # ── 주간 매출 트렌드 차트 ─────────────────────────────────────────────────
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="sec-title">📈 주간 매출 트렌드 (최근 12주)</div>', unsafe_allow_html=True)
+    if len(weekly_all) > 0:
+        plot_w = weekly_all.tail(12).copy()
+        plot_w['매출_만'] = (plot_w['매출'] / 10000).round(1)
+        plot_w['MA4'] = plot_w['매출'].rolling(4, min_periods=1).mean() / 10000
+
+        fig_w = go.Figure()
+        fig_w.add_bar(x=plot_w['주차'], y=plot_w['매출_만'],
+                      name='주간 매출', marker_color='#90CAF9', opacity=0.85)
+        fig_w.add_scatter(x=plot_w['주차'], y=plot_w['MA4'],
+                          name='4주 이동평균', mode='lines+markers',
+                          line=dict(color='#1E88E5', width=2.5),
+                          marker=dict(size=6))
+        fig_w.update_layout(height=260, margin=dict(t=10,b=10,l=0,r=0),
+                            yaxis_title="만원", xaxis_tickangle=-30,
+                            legend=dict(orientation='h', y=1.15),
+                            plot_bgcolor='white', paper_bgcolor='white')
+        fig_w.update_yaxes(gridcolor='#f0f0f0')
+        st.plotly_chart(fig_w, use_container_width=True)
+
+    # ── 카테고리 & 채널 구성 ─────────────────────────────────────────────────
+    col_pie1, col_pie2 = st.columns(2)
+    with col_pie1:
+        st.markdown('<div class="sec-title">카테고리 구성</div>', unsafe_allow_html=True)
+        fig_cat = px.pie(
+            values=cat_rev.values, names=cat_rev.index,
+            hole=0.5, color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        fig_cat.update_layout(height=220, margin=dict(t=0,b=0,l=0,r=0),
+                               showlegend=True, legend=dict(font=dict(size=11)))
+        fig_cat.update_traces(textposition='inside', textinfo='percent+label',
+                               textfont_size=11)
+        st.plotly_chart(fig_cat, use_container_width=True)
+    with col_pie2:
+        st.markdown('<div class="sec-title">채널 구성</div>', unsafe_allow_html=True)
+        fig_ch = px.pie(
+            values=ch_rev.values, names=ch_rev.index,
+            hole=0.5, color_discrete_map=CH_COLORS
+        )
+        fig_ch.update_layout(height=220, margin=dict(t=0,b=0,l=0,r=0),
+                              showlegend=True, legend=dict(font=dict(size=11)))
+        fig_ch.update_traces(textposition='inside', textinfo='percent+label',
+                              textfont_size=11)
+        st.plotly_chart(fig_ch, use_container_width=True)
+
+# ════════════════════════════════════════════════════════════════════════════
+# TAB 9 — 관리
+# ════════════════════════════════════════════════════════════════════════════
+with tab9:
     sub1,sub2,sub3,sub4 = st.tabs(["🎯 월별 목표","📦 상품 메모","✅ TODO","📥 매출 업데이트"])
 
+    # ── 서브탭 1: 월별 목표 ──────────────────────────────────────────────────
     with sub1:
-        st.markdown("**월별 매출 목표 설정 (만원)**")
-        targets2 = mgmt.get("targets",{})
-        cols = st.columns(3)
-        new_targets = {}
-        for i,ym in enumerate(months_all):
-            with cols[i%3]:
-                actual = df_all[df_all['년월']==ym]['판매금액'].sum()/10000
-                val = st.number_input(f"{ym}", value=int(targets2.get(ym, round(actual*1.1))), step=100, key=f"t_{ym}")
-                new_targets[ym] = val
-                ach = actual/val*100 if val>0 else 0
-                color = "green" if ach>=100 else ("orange" if ach>=80 else "red")
-                st.markdown(f"<span style='color:{color};font-size:12px'>달성 {ach:.1f}% (실적 {actual:,.0f}만)</span>", unsafe_allow_html=True)
-        if st.button("💾 목표 저장", type="primary"):
-            mgmt['targets'] = {k:int(v) for k,v in new_targets.items()}
-            save_mgmt(mgmt); st.success("저장됐어요!")
-        if new_targets:
-            tgt_df = pd.DataFrame([{'년월':ym,'목표':new_targets.get(ym,0),'실적':df_all[df_all['년월']==ym]['판매금액'].sum()/10000} for ym in months_all])
-            fig = go.Figure()
-            fig.add_bar(x=tgt_df['년월'], y=tgt_df['실적'], name='실적', marker_color='#1E88E5')
-            fig.add_scatter(x=tgt_df['년월'], y=tgt_df['목표'], name='목표', mode='lines+markers', line=dict(color='#E53935',dash='dash',width=2))
-            fig.update_layout(title='목표 vs 실적', height=280, plot_bgcolor='white',
-                              legend=dict(orientation='h',y=1.1), xaxis=dict(tickangle=-45))
-            st.plotly_chart(fig, use_container_width=True)
+        st.markdown("### 🎯 월별 매출 목표 관리")
+        goal_data = load_goals()
+        months_list = sorted(df_all['년월'].unique(), reverse=True) if '년월' in df_all.columns else []
 
-    with sub2:
-        st.markdown("**상품별 재고 현황 / 메모**")
-        stock_notes = mgmt.get("stock_notes",{})
-        style_list = df_all.groupby(['스타일코드','대표명'])['판매금액'].sum().sort_values(ascending=False).reset_index()['대표명'].head(60).tolist()
-        sel = st.selectbox("상품 선택", style_list)
-        existing = stock_notes.get(sel,{"재고":"","상태":"정상","메모":""})
-        c1,c2 = st.columns(2)
-        new_stock = c1.text_input("재고 현황", value=existing.get("재고",""), placeholder="예: 무신사 30개 / 자사몰 10개")
-        new_status = c2.selectbox("상태", ["정상","재고 부족 주의","재고 소진 임박","단종","재출시 검토"],
-                                   index=["정상","재고 부족 주의","재고 소진 임박","단종","재출시 검토"].index(existing.get("상태","정상")))
-        new_memo = st.text_area("메모", value=existing.get("메모",""), height=100)
-        if st.button("💾 저장", type="primary"):
-            stock_notes[sel] = {"재고":new_stock,"상태":new_status,"메모":new_memo,"수정일":datetime.now().strftime("%Y-%m-%d %H:%M")}
-            mgmt['stock_notes'] = stock_notes; save_mgmt(mgmt); st.success("저장됐어요!")
-        if stock_notes:
+        if months_list:
+            sel_month = st.selectbox("월 선택", months_list, key="goal_month")
+            actual = df_all[df_all['년월'] == sel_month]['판매금액'].sum()
+            cur_goal = goal_data.get(sel_month, 0)
+            achievement = actual / cur_goal * 100 if cur_goal > 0 else 0
+
+            c1, c2, c3 = st.columns(3)
+            kpi_card(c1, "실적", f"₩{actual/10000:,.0f}만")
+            kpi_card(c2, "목표", f"₩{cur_goal/10000:,.0f}만", color="#1565C0")
+            kpi_card(c3, "달성률", f"{achievement:.1f}%",
+                     delta=achievement-100, color="#2E7D32" if achievement>=100 else "#C62828")
+
             st.markdown("---")
-            memo_df = pd.DataFrame([{"상품":k,"재고":v.get("재고",""),"상태":v.get("상태",""),"메모":v.get("메모",""),"수정일":v.get("수정일","")} for k,v in stock_notes.items()])
-            st.dataframe(memo_df, use_container_width=True, hide_index=True)
+            new_goal = st.number_input("목표 금액 (원)", value=int(cur_goal), step=1000000,
+                                       format="%d", key="new_goal_input")
+            if st.button("💾 저장", key="save_goal"):
+                goal_data[sel_month] = new_goal
+                save_goals(goal_data)
+                st.success(f"{sel_month} 목표 ₩{new_goal/10000:,.0f}만 저장 완료!")
+                st.rerun()
 
-    with sub3:
-        todos = mgmt.get("todos",[])
-        c1,c2,c3 = st.columns([3,1,1])
-        new_task = c1.text_input("새 할 일", placeholder="예: MA-1 자켓 재고 확인")
-        new_priority = c2.selectbox("우선순위", ["🔴 즉시","🟡 이번달","🟢 26FW"])
-        c3.markdown("<br>", unsafe_allow_html=True)
-        if c3.button("➕ 추가") and new_task:
-            todos.append({"task":new_task,"priority":new_priority,"done":False,"added":datetime.now().strftime("%Y-%m-%d")})
-            mgmt['todos'] = todos; save_mgmt(mgmt); st.rerun()
-        for priority in ["🔴 즉시","🟡 이번달","🟢 26FW"]:
-            items = [t for t in todos if t.get('priority')==priority]
-            if items:
-                st.markdown(f"**{priority}**")
-                for i,todo in enumerate(todos):
-                    if todo.get('priority')!=priority: continue
-                    cl1,cl2 = st.columns([10,1])
-                    done = cl1.checkbox(todo['task'], value=todo.get('done',False), key=f"todo_{i}")
-                    if done != todo.get('done',False):
-                        todos[i]['done'] = done; mgmt['todos'] = todos; save_mgmt(mgmt)
-                    if cl2.button("🗑️", key=f"del_{i}"):
-                        todos.pop(i); mgmt['todos'] = todos; save_mgmt(mgmt); st.rerun()
-        done_items = [t for t in todos if t.get('done')]
-        if done_items:
-            with st.expander(f"✅ 완료 ({len(done_items)}개)"):
-                for t in done_items: st.markdown(f"~~{t['task']}~~")
-
-    with sub4:
-        import subprocess, sys
-        st.markdown("**📥 채널별 로우파일 → 통합 매출 자동 업데이트**")
-        st.markdown("""
-        `ERP/raw/` 폴더에 아래 파일을 넣고 버튼을 누르세요.
-
-        | 채널 | 파일명 |
-        |------|--------|
-        | 무신사 | `무신사.xls` |
-        | 무신사글로벌 | `무신사글로벌.xls` |
-        | 자사몰 | `자사몰.csv` |
-        | 29CM | `29cm.xlsx` |
-        """)
-        raw_dir = Path(__file__).parent / "raw"
-        raw_files = list(raw_dir.glob("*")) if raw_dir.exists() else []
-        if raw_files:
-            st.success(f"raw 폴더 내 파일: {', '.join([f.name for f in raw_files])}")
+            # 전체 월 목표 현황표
+            st.markdown("#### 전체 월 목표 현황")
+            goal_rows = []
+            for m in months_list:
+                act = df_all[df_all['년월'] == m]['판매금액'].sum()
+                g   = goal_data.get(m, 0)
+                ach = act/g*100 if g>0 else 0
+                goal_rows.append({"월": m, "실적(만)": f"{act/10000:,.0f}", "목표(만)": f"{g/10000:,.0f}", "달성률": f"{ach:.1f}%"})
+            st.dataframe(pd.DataFrame(goal_rows), use_container_width=True, hide_index=True)
         else:
-            st.warning("raw 폴더가 비어 있거나 없습니다.")
+            st.info("데이터를 먼저 업로드하세요.")
 
-        if st.button("🔄 지금 업데이트 실행", type="primary"):
-            merge_script = Path(__file__).parent / "merge_raw.py"
-            if not merge_script.exists():
-                st.error("merge_raw.py 파일이 없습니다.")
-            else:
-                with st.spinner("실행 중..."):
-                    result = subprocess.run(
-                        [sys.executable, str(merge_script)],
-                        capture_output=True, text=True, encoding='utf-8', errors='replace'
-                    )
-                if result.returncode == 0:
-                    st.success("✅ 업데이트 완료!")
-                    st.code(result.stdout or "(출력 없음)")
-                    st.cache_data.clear()
+    # ── 서브탭 2: 상품 메모 ──────────────────────────────────────────────────
+    with sub2:
+        st.markdown("### 📦 상품별 메모")
+        memo_data = load_memos()
+        products = sorted(df_all['상품명'].dropna().unique()) if '상품명' in df_all.columns else []
+
+        if products:
+            sel_prod = st.selectbox("상품 선택", products, key="memo_prod")
+            cur_memo = memo_data.get(sel_prod, "")
+            new_memo = st.text_area("메모", value=cur_memo, height=150, key="memo_text")
+            if st.button("💾 메모 저장", key="save_memo"):
+                memo_data[sel_prod] = new_memo
+                save_memos(memo_data)
+                st.success("저장 완료!")
+            if cur_memo:
+                st.markdown(f'<div class="insight-card">{cur_memo}</div>', unsafe_allow_html=True)
+        else:
+            st.info("데이터를 먼저 업로드하세요.")
+
+    # ── 서브탭 3: TODO ────────────────────────────────────────────────────────
+    with sub3:
+        st.markdown("### ✅ TODO 리스트")
+        todo_data = load_todos()
+        new_todo = st.text_input("새 TODO 입력 후 엔터", key="new_todo")
+        if new_todo:
+            todo_data.append({"text": new_todo, "done": False})
+            save_todos(todo_data)
+            st.rerun()
+
+        for i, item in enumerate(todo_data):
+            col_chk, col_txt, col_del = st.columns([0.1, 0.8, 0.1])
+            with col_chk:
+                done = st.checkbox("", value=item["done"], key=f"todo_{i}")
+                if done != item["done"]:
+                    todo_data[i]["done"] = done
+                    save_todos(todo_data)
                     st.rerun()
-                else:
-                    st.error("❌ 오류 발생")
-                    st.code(result.stderr or result.stdout)
+            with col_txt:
+                style = "text-decoration:line-through;color:#aaa;" if item["done"] else ""
+                st.markdown(f'<span style="{style}">{item["text"]}</span>', unsafe_allow_html=True)
+            with col_del:
+                if st.button("🗑", key=f"del_todo_{i}"):
+                    todo_data.pop(i)
+                    save_todos(todo_data)
+                    st.rerun()
+
+    # ── 서브탭 4: 매출 업데이트 ──────────────────────────────────────────────
+    with sub4:
+        st.markdown("### 📥 매출 데이터 업데이트")
+        st.info("새 매출 파일(Excel)을 업로드하면 기존 데이터에 병합됩니다.")
+        uploaded = st.file_uploader("Excel 파일 업로드", type=["xlsx","xls"], key="upload_new")
+        if uploaded:
+            try:
+                df_new = pd.read_excel(uploaded)
+                st.write(f"업로드된 행 수: {len(df_new):,}")
+                st.dataframe(df_new.head(), use_container_width=True)
+                if st.button("✅ 병합 & 저장", key="merge_btn"):
+                    df_merged = pd.concat([df_all, df_new], ignore_index=True)
+                    df_merged.drop_duplicates(inplace=True)
+                    df_merged.to_excel(DATA_PATH, index=False)
+                    st.success(f"병합 완료! 총 {len(df_merged):,}행 저장됨.")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"파일 읽기 오류: {e}")
