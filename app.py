@@ -86,6 +86,12 @@ section[data-testid="stSidebar"] .block-container{padding-top:1rem!important;}
 .metric-label{font-size:11px;color:#888;font-weight:600;}
 .metric-value{font-size:20px;font-weight:800;color:#111;}
 .metric-delta{font-size:12px;margin-top:2px;font-weight:600;}
+
+/* ── 탭 바 상단 고정 ── */
+[data-baseweb="tab-list"]{
+    position:sticky!important;top:0!important;z-index:999!important;
+    background:#fff!important;padding:4px 0!important;
+    box-shadow:0 2px 6px rgba(0,0,0,.07);}
 </style>""", unsafe_allow_html=True)
 
 # ── 데이터 로더 ───────────────────────────────────────────────────────────────
