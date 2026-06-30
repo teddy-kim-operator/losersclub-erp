@@ -123,12 +123,15 @@ def load_data(filepath: str):
     df['카테고리'] = df['스타일코드'].apply(get_cat)
     df['판매단가'] = np.where(df['수량'] > 0, df['판매금액'] / df['수량'], np.nan)
 
-    def calc_real(row):
-        if pd.isna(row['택가']) or row['택가'] <= 0: return np.nan
-        if pd.isna(row['판매단가']): return np.nan
-        base = row['택가'] * 1.2 if row['채널'] == '무신사글로벌' else row['택가']
-        return (row['판매단가'] / base) * 100
-    df['실현율'] = df.apply(calc_real, axis=1)
+    # 실현율 = 판매금액 / (택가 × 수량). 채널 보정 없음 (무신사글로벌은 환율 프리미엄이 이미 판매금액에 반영)
+    df['총택가'] = df['택가'] * df['수량']
+    df['실현율'] = np.where(
+        (df['총택가'] > 0) & df['택가'].notna(),
+        (df['판매금액'] / df['총택가']) * 100,
+        np.nan
+    )
+    # 이상값 제거 (30% 미만 or 150% 초과는 오류 데이터)
+    df['실현율'] = df['실현율'].where((df['실현율'] >= 30) & (df['실현율'] <= 150))
     df['할인율'] = 100 - df['실현율']
 
     non29 = df[df['채널'] != '29CM']
@@ -294,7 +297,13 @@ with tab1:
     # 월별 KPI 계산
     monthly = df.groupby('년월').agg(매출=('판매금액','sum'),수량=('수량','sum'),SKU=('상품명','nunique')).reset_index()
     monthly['ASP'] = monthly['매출'] / monthly['수량']
-    monthly['실현율'] = df.groupby('년월')['실현율'].mean().reindex(monthly['년월']).values
+    # 가중 실현율 = 월 전체 판매금액 / 월 전체 총택가
+    _real_w = df.groupby('년월').apply(
+        lambda x: x['판매금액'].sum() / x['총택가'].sum() * 100 if x['총택가'].sum() > 0 else np.nan
+    ).reset_index(name='실현율_w')
+    monthly = monthly.merge(_real_w, on='년월', how='left')
+    monthly['실현율'] = monthly['실현율_w']
+    monthly.drop(columns=['실현율_w'], inplace=True)
     monthly['매출_만'] = (monthly['매출']/10000).round()
     monthly = monthly.sort_values('년월').reset_index(drop=True)
     monthly['MoM'] = monthly['매출'].pct_change()*100
@@ -504,66 +513,203 @@ with tab2:
 # ════════════════════════════════════════════════════════════════════════════
 with tab3:
     st.markdown("### 📺 채널별 분석")
+
+    # ── 기초 집계 (가중 실현율) ────────────────────────────────────────────
     ch_m = df.groupby(['년월','채널'])['판매금액'].sum().reset_index()
     ch_m['매출_만'] = (ch_m['판매금액']/10000).round()
-    ch_t = df.groupby('채널').agg(매출=('판매금액','sum'),수량=('수량','sum'),실현율=('실현율','mean')).reset_index()
+
+    # 채널별 가중 실현율 = 총판매금액 / 총택가합
+    def _ch_real(g):
+        tk = g['총택가'].sum()
+        return g['판매금액'].sum() / tk * 100 if tk > 0 else np.nan
+
+    ch_t = df.groupby('채널').agg(
+        매출=('판매금액','sum'), 수량=('수량','sum')
+    ).reset_index()
+    ch_t['가중실현율'] = df.groupby('채널').apply(_ch_real).values
+    ch_t['할인율'] = 100 - ch_t['가중실현율']
     ch_t['매출_만'] = (ch_t['매출']/10000).round()
     ch_t['비중'] = (ch_t['매출']/ch_t['매출'].sum()*100).round(1)
     ch_t['ASP'] = (ch_t['매출']/ch_t['수량']/1000).round(1)
+    ch_t = ch_t.sort_values('매출', ascending=False).reset_index(drop=True)
 
-    col_a,col_b = st.columns([2,1])
+    # ── 상단 KPI ───────────────────────────────────────────────────────────
+    kpi_cols = st.columns(len(ch_t))
+    for i, (_, row) in enumerate(ch_t.iterrows()):
+        color = CH_COLORS.get(row['채널'], '#999')
+        disc = row['할인율']
+        disc_txt = f"할인 {disc:.1f}%" if disc > 0 else f"프리미엄 {abs(disc):.1f}%"
+        disc_color = "#43A047" if disc <= 0 else ("#FB8C00" if disc <= 15 else "#E53935")
+        kpi_cols[i].markdown(
+            f'<div class="kpi" style="border-top-color:{color}">'
+            f'<div class="kpi-label">{row["채널"]}</div>'
+            f'<div class="kpi-value">{row["매출_만"]:,}만</div>'
+            f'<div class="kpi-delta" style="color:{disc_color}">{disc_txt} | {row["비중"]}%</div>'
+            f'</div>', unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── 채널별 월매출 + 실현율 추이 ────────────────────────────────────────
+    col_a, col_b = st.columns([3, 2])
     with col_a:
-        fig = px.bar(ch_m, x='년월', y='매출_만', color='채널', title='채널별 월별 매출',
-                     color_discrete_map=CH_COLORS)
-        fig.update_layout(height=360, plot_bgcolor='white', xaxis=dict(tickangle=-45),
-                          legend=dict(orientation='h',y=1.1))
+        fig = px.bar(ch_m, x='년월', y='매출_만', color='채널',
+                     title='채널별 월별 매출 (만원)', color_discrete_map=CH_COLORS,
+                     barmode='stack')
+        fig.update_layout(height=340, plot_bgcolor='white', xaxis=dict(tickangle=-45),
+                          legend=dict(orientation='h', y=1.12))
         st.plotly_chart(fig, use_container_width=True)
     with col_b:
-        fig = px.pie(ch_t, values='매출_만', names='채널', hole=0.4,
-                     color='채널', color_discrete_map=CH_COLORS, title='채널 비중')
-        fig.update_traces(textposition='inside', textinfo='percent+label')
-        fig.update_layout(height=360, showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        # 채널별 월별 가중 실현율
+        ch_real_m = df.groupby(['년월','채널']).apply(
+            lambda x: x['판매금액'].sum() / x['총택가'].sum() * 100
+            if x['총택가'].sum() > 0 else np.nan
+        ).reset_index(name='실현율')
+        fig2 = px.line(ch_real_m, x='년월', y='실현율', color='채널',
+                       title='채널별 월별 실현율(%)', color_discrete_map=CH_COLORS,
+                       markers=True)
+        fig2.add_hline(y=100, line_dash='dot', line_color='#888', annotation_text='택가 100%')
+        fig2.update_layout(height=340, plot_bgcolor='white', xaxis=dict(tickangle=-45),
+                           legend=dict(orientation='h', y=1.12),
+                           yaxis=dict(range=[60, 115]))
+        st.plotly_chart(fig2, use_container_width=True)
 
-    fig = go.Figure()
-    for _, row in ch_t.iterrows():
-        if pd.notna(row['실현율']):
-            fig.add_bar(x=[row['채널']], y=[round(row['실현율'],1)],
-                        marker_color=CH_COLORS.get(row['채널'],'#999'),
-                        text=[f"{row['실현율']:.1f}%"], textposition='outside')
-    fig.update_layout(title='채널별 실현율', yaxis=dict(range=[50,105]),
-                      plot_bgcolor='white', showlegend=False, height=260)
-    st.plotly_chart(fig, use_container_width=True)
+    # ── 채널별 할인율 상세 ─────────────────────────────────────────────────
+    st.markdown("### 💸 채널별 할인율 분석")
+    col_c, col_d = st.columns([1, 2])
 
-    # 채널 간 카니발리제이션
-    with st.expander("🔀 채널 카니발리제이션 분석"):
+    with col_c:
+        # 채널별 실현율 바
+        fig3 = go.Figure()
+        for _, row in ch_t.sort_values('가중실현율').iterrows():
+            color = CH_COLORS.get(row['채널'], '#999')
+            fig3.add_bar(
+                x=[row['가중실현율']], y=[row['채널']],
+                orientation='h',
+                marker_color=color,
+                text=[f"{row['가중실현율']:.1f}%"],
+                textposition='outside',
+                name=row['채널']
+            )
+        fig3.add_vline(x=100, line_dash='dot', line_color='#888')
+        fig3.update_layout(
+            title='채널별 가중 실현율', height=280,
+            plot_bgcolor='white', showlegend=False,
+            xaxis=dict(range=[60, 115], title='실현율(%)'),
+            margin=dict(l=10, r=60)
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+
+    with col_d:
+        # 할인율 구간 분포 (채널별)
+        bins   = [-0.1, 5, 10, 15, 20, 25, 30, 40, 100]
+        labels = ['0~5%','6~10%','11~15%','16~20%','21~25%','26~30%','31~40%','41%+']
+        df_real = df[df['실현율'].notna()].copy()
+        df_real['할인구간'] = pd.cut(df_real['할인율'], bins=bins, labels=labels)
+        dist = (df_real.groupby(['채널','할인구간'])['판매금액']
+                .sum().unstack(fill_value=0))
+        dist_pct = dist.div(dist.sum(axis=1), axis=0) * 100
+        fig4 = px.bar(
+            dist_pct.reset_index().melt(id_vars='채널', var_name='할인구간', value_name='비중'),
+            x='채널', y='비중', color='할인구간',
+            title='채널별 할인율 구간 비중(%)',
+            color_discrete_sequence=px.colors.sequential.RdYlGn_r,
+            barmode='stack'
+        )
+        fig4.update_layout(height=280, plot_bgcolor='white',
+                           legend=dict(orientation='h', y=1.12))
+        st.plotly_chart(fig4, use_container_width=True)
+
+    # ── 채널 요약 테이블 ────────────────────────────────────────────────────
+    with st.expander("📋 채널 상세 요약"):
+        disp_ch = ch_t[['채널','매출_만','비중','가중실현율','할인율','ASP','수량']].copy()
+        disp_ch['가중실현율'] = disp_ch['가중실현율'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "-")
+        disp_ch['할인율'] = disp_ch['할인율'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "-")
+        disp_ch['ASP'] = disp_ch['ASP'].apply(lambda x: f"{x:.1f}천")
+        disp_ch = disp_ch.rename(columns={'매출_만':'매출(만)','비중':'비중(%)','가중실현율':'실현율(가중)','할인율':'평균할인율','ASP':'평균단가'})
+        st.dataframe(disp_ch, use_container_width=True, hide_index=True)
+
+    # ── 이벤트 감지 (일별 실현율 급락) ────────────────────────────────────
+    st.markdown("### 🔍 이벤트 / 할인 구간 감지")
+    event_ch = st.selectbox("채널 선택", ['무신사','자사몰','29CM','무신사글로벌','팝업(더현대)'], key='event_ch')
+    df_event = df[df['채널'] == event_ch].copy()
+    if len(df_event) > 0:
+        daily_real = df_event.groupby('날짜').apply(
+            lambda x: x['판매금액'].sum() / x['총택가'].sum() * 100
+            if x['총택가'].sum() > 0 else np.nan
+        ).reset_index(name='실현율')
+        daily_rev = df_event.groupby('날짜')['판매금액'].sum().reset_index(name='매출')
+        daily = daily_real.merge(daily_rev, on='날짜')
+        daily['매출_만'] = daily['매출'] / 10000
+
+        fig5 = go.Figure()
+        # 이벤트 기간 (실현율 < 80%) 하이라이트
+        event_days = daily[daily['실현율'] < 80]['날짜']
+        for ed in event_days:
+            fig5.add_vrect(x0=str(ed), x1=str(ed + pd.Timedelta(days=1)),
+                           fillcolor='rgba(229,57,53,0.12)', line_width=0)
+        fig5.add_bar(x=daily['날짜'], y=daily['매출_만'], name='일매출(만)',
+                     marker_color='#90CAF9', opacity=0.7, yaxis='y2')
+        fig5.add_scatter(x=daily['날짜'], y=daily['실현율'], name='실현율(%)',
+                         line=dict(color='#E53935', width=2), mode='lines+markers',
+                         marker=dict(size=5))
+        fig5.add_hline(y=80, line_dash='dash', line_color='#FB8C00',
+                       annotation_text='80% 기준선')
+        fig5.add_hline(y=100, line_dash='dot', line_color='#888',
+                       annotation_text='택가 100%')
+        fig5.update_layout(
+            title=f'{event_ch} 일별 실현율 & 매출 (빨간 음영 = 이벤트 구간)',
+            height=340, plot_bgcolor='white',
+            yaxis=dict(title='실현율(%)', range=[50, 115]),
+            yaxis2=dict(title='일매출(만)', overlaying='y', side='right'),
+            legend=dict(orientation='h', y=1.1),
+            xaxis=dict(tickangle=-45)
+        )
+        st.plotly_chart(fig5, use_container_width=True)
+
+        # 이벤트 구간 요약
+        if len(event_days) > 0:
+            ev_df = daily[daily['실현율'] < 80]
+            st.markdown(
+                f'<div class="warn-card">⚠️ <b>이벤트 감지</b>: 실현율 80% 미만 구간 '
+                f'<b>{len(ev_df)}일</b> — '
+                f'{ev_df["날짜"].min().strftime("%m/%d")}~{ev_df["날짜"].max().strftime("%m/%d")} | '
+                f'평균 실현율 {ev_df["실현율"].mean():.1f}% | '
+                f'이벤트 매출 {ev_df["매출_만"].sum():,.0f}만</div>',
+                unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="good-card">✅ 이벤트 구간(실현율 80% 미만) 없음</div>',
+                        unsafe_allow_html=True)
+    else:
+        st.info("해당 채널 데이터 없음")
+
+    # ── 월별 채널 할인율 히트맵 ────────────────────────────────────────────
+    with st.expander("🗓️ 월별 × 채널별 실현율 히트맵"):
+        heatmap_data = df.groupby(['년월','채널']).apply(
+            lambda x: round(x['판매금액'].sum() / x['총택가'].sum() * 100, 1)
+            if x['총택가'].sum() > 0 else np.nan
+        ).unstack()
+        fig6 = px.imshow(
+            heatmap_data,
+            color_continuous_scale='RdYlGn',
+            zmin=70, zmax=110,
+            text_auto='.1f',
+            title='월별 × 채널별 실현율(%) 히트맵',
+            aspect='auto'
+        )
+        fig6.update_layout(height=350)
+        st.plotly_chart(fig6, use_container_width=True)
+        st.caption("※ 100% 초과 = 환율 프리미엄(무신사글로벌). 80% 미만 = 이벤트/기획전 구간.")
+
+    # ── 채널 간 상관 ───────────────────────────────────────────────────────
+    with st.expander("🔀 채널 매출 상관 분석"):
         ch_monthly_wide = df_all.groupby(['년월','채널'])['판매금액'].sum().unstack(fill_value=0).reset_index()
-        for ch in CHANNELS:
-            if ch not in ch_monthly_wide.columns: ch_monthly_wide[ch] = 0
-        ch_monthly_wide = ch_monthly_wide.sort_values('년월')
-        musinsa_real = df_all[df_all['채널']=='무신사'].groupby('년월')['실현율'].mean().reset_index()
-        musinsa_real.columns = ['년월','무신사_실현율']
-        ch_monthly_wide = ch_monthly_wide.merge(musinsa_real, on='년월', how='left')
-
-        merged = ch_monthly_wide.dropna(subset=['무신사_실현율'])
-        if len(merged) > 3 and '자사몰' in merged.columns:
-            corr = merged['무신사_실현율'].corr(merged['자사몰'])
-            col_x, col_y = st.columns(2)
-            with col_x:
-                st.metric("무신사 실현율 ↔ 자사몰 상관계수", f"{corr:.3f}")
-                if corr < -0.3:
-                    st.markdown('<div class="danger-card">🔴 카니발리제이션 감지</div>', unsafe_allow_html=True)
-                elif corr > 0.3:
-                    st.markdown('<div class="good-card">🟢 헤일로 효과</div>', unsafe_allow_html=True)
-                else:
-                    st.info("채널 간 독립적 움직임")
-            with col_y:
-                ch_for_corr = [ch for ch in CHANNELS if ch in ch_monthly_wide.columns and ch_monthly_wide[ch].sum()>0]
-                if len(ch_for_corr) >= 2:
-                    corr_matrix = ch_monthly_wide[ch_for_corr].corr().round(2)
-                    fig2 = px.imshow(corr_matrix, color_continuous_scale='RdBu_r', zmin=-1, zmax=1, text_auto=True)
-                    fig2.update_layout(height=280)
-                    st.plotly_chart(fig2, use_container_width=True)
+        ch_for_corr = [c for c in CHANNELS if c in ch_monthly_wide.columns and ch_monthly_wide[c].sum() > 0]
+        if len(ch_for_corr) >= 2:
+            corr_matrix = ch_monthly_wide[ch_for_corr].corr().round(2)
+            fig7 = px.imshow(corr_matrix, color_continuous_scale='RdBu_r', zmin=-1, zmax=1,
+                             text_auto=True, title='채널 간 매출 상관계수')
+            fig7.update_layout(height=300)
+            st.plotly_chart(fig7, use_container_width=True)
 
 # ════════════════════════════════════════════════════════════════════════════
 # TAB 4 — 상품랭킹
@@ -1496,3 +1642,4 @@ with tab9:
                     st.rerun()
             except Exception as e:
                 st.error(f"파일 읽기 오류: {e}")
+
